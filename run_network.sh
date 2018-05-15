@@ -1,12 +1,12 @@
-cd basememorymanager
+cd base
 ./burn_run.sh
 ./run_network.sh
-cd ../vdnnmemorymanager
+cd ../vdnn
 ./run_network.sh
-cd ../vdnnextmemorymanager
+cd ../vdnn_ext
 ./run_network.sh
 ./run_network_reverse.sh
-cd ../vdnnmemorymanager
+cd ../vdnn
 ./run_network_reverse.sh
-cd ../basememorymanager
+cd ../base
 ./run_network_reverse.sh

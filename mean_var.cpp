@@ -4,7 +4,7 @@
 
 using namespace std;
 
-int start = 0;
+int start = 100;
 
 int main(int argc, char *argv[]) {
 	int N;
