@@ -836,6 +836,13 @@ void NeuralNet::vDNNOptimize(size_t &exp_max_consume, size_t &max_consume) {
 			std::cerr << "Choosing GREEDY, ALL OFFLOAD\n";
 			return;
 		}
+
+		setOffload(NeuralNet::OFFLOAD_CONV);
+		resetPrefetched();
+		if (simulateNeuralNetworkMemory(PREFER_MEMORY_OPTIMAL, hard, exp_max_consume, max_consume)) {
+			std::cerr << "Choosing MEM_OPT, CONV OFFLOAD\n";
+			return;
+		}
 	
 		
 		setOffload(NeuralNet::OFFLOAD_ALL);

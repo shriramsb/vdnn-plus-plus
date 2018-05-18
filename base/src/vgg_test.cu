@@ -10,7 +10,7 @@ using namespace std;
 
 typedef unsigned char uchar;
 
-int num_train = 256, num_test = 500;
+int num_train = 42*4 + 1, num_test = 500;
 
 int reverseInt(int n) {
 	int bytes = 4;
@@ -492,7 +492,7 @@ int main(int argc, char *argv[]) {
 	Solver solver(&net, (void *)f_train_images, f_train_labels, (void *)f_train_images, f_train_labels, num_epoch, SGD, learning_rate, learning_rate_decay, num_train, num_train);
 	vector<float> loss;
 	vector<float> time;
-	solver.getTrainTime(loss, time, 100);
+	solver.getTrainTime(loss, time, 40);
 	printTimes(time, filename);
 
 }
@@ -509,7 +509,7 @@ void printTimes(vector<float> &time, string filename) {
 		std_dev += pow(time[i] - mean_time, 2);
 	}
 	std_dev /= N;
-	pow(std_dev, 0.5);
+	std_dev = pow(std_dev, 0.5);
 	cout << "Average time: " << mean_time << endl;
 	cout << "Standard deviation: " << std_dev << endl;
 
@@ -523,5 +523,14 @@ void printTimes(vector<float> &time, string filename) {
 	f << "mean_time: " << mean_time << endl;
 	f << "standard_deviation: " << std_dev << endl;
 	f.close();
+
+	filename.append(".bin");
+	fstream f_bin;
+	f_bin.open(filename.c_str(), ios_base::out);
+	f_bin.write((char *)&N, sizeof(N));
+	for (int i = 0; i < N; i++) {
+		f_bin.write((char *)&time[i], sizeof(time[i]));
+	}
+	f_bin.close();
 }
 

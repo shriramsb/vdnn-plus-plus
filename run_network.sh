@@ -1,5 +1,7 @@
-cd base
+cd vdnn
 ./burn_run.sh
+cd ..
+cd base
 ./run_network.sh
 cd ../vdnn
 ./run_network.sh

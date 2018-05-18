@@ -10,7 +10,7 @@ using namespace std;
 
 typedef unsigned char uchar;
 
-int num_train = 256, num_test = 500;
+int num_train = 42*4+1, num_test = 500;
 
 int reverseInt(int n) {
 	int bytes = 4;
@@ -366,7 +366,7 @@ int main(int argc, char *argv[]) {
 		}
 	}
 
-	int batch_size = 50;
+	int batch_size = 42;
 	long long dropout_seed = 1;
 	float softmax_eps = 1e-8;
 	float init_std_dev = 0.1;
@@ -380,7 +380,7 @@ int main(int argc, char *argv[]) {
 	vector<float> loss;
 	vector<float> time;
 	vector<vector<float> > fwd_vdnn_lag, bwd_vdnn_lag;
-	solver.getTrainTime(loss, time, 1, fwd_vdnn_lag, bwd_vdnn_lag);
+	solver.getTrainTime(loss, time, 40, fwd_vdnn_lag, bwd_vdnn_lag);
 	printTimes(time, filename);
 	printvDNNLag(fwd_vdnn_lag, bwd_vdnn_lag, filename);
 
@@ -398,7 +398,7 @@ void printTimes(vector<float> &time, string filename) {
 		std_dev += pow(time[i] - mean_time, 2);
 	}
 	std_dev /= N;
-	pow(std_dev, 0.5);
+	std_dev = pow(std_dev, 0.5);
 	cout << "Average time: " << mean_time << endl;
 	cout << "Standard deviation: " << std_dev << endl;
 
@@ -412,6 +412,15 @@ void printTimes(vector<float> &time, string filename) {
 	f << "mean_time: " << mean_time << endl;
 	f << "standard_deviation: " << std_dev << endl;
 	f.close();
+
+	filename.append(".bin");
+	fstream f_bin;
+	f_bin.open(filename.c_str(), ios_base::out);
+	f_bin.write((char *)&N, sizeof(N));
+	for (int i = 0; i < N; i++) {
+		f_bin.write((char *)&time[i], sizeof(time[i]));
+	}
+	f_bin.close();
 
 }
 
