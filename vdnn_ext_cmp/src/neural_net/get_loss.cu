@@ -295,7 +295,7 @@ void NeuralNet::getLoss(void *X, int *y, double learning_rate, std::vector<float
 		}
 
 		// record the point at which computation ends
-		checkCudaErrors(cudaEventRecord(event_fwd_compute_done[i]));
+		checkCudaErrors(cudaEventRecord(event_fwd_compute_done[i], stream_compute));
 
 		if (to_offload[i] && train == true) {
 			checkPThreadErrors(pthread_create(&thread_offload_handler[i], NULL, NeuralNet::threadOffloadHandlerHelper, (void *)(&(layer_num[i]))));

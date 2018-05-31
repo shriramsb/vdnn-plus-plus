@@ -22,6 +22,9 @@
 // ---------------------- vDNN ext cmp start ------------------
 #include <queue>
 #include <list>
+#define NUM_COMPRESSION_THREADS 8
+#define COMPRESSION_DISCRETIZATION_FACTOR 8
+#define COMPRESSION_BATCH_SIZE 32
 
 // ---------------------- vDNN ext cmp end --------------------
 
@@ -31,6 +34,32 @@
 struct PtrIndex {
 	void *ptr;
 	int index;
+};
+
+struct CompressedData {
+	void ***data;
+	bool **slot_taken;
+	unsigned int *mask;
+};
+
+struct CompressionMetadata {
+	long total_compression_batches;
+	long *num_elements, *start_pos;
+	long **slot_size; 
+};
+
+struct CompressionThreadArgs {
+	CompressedData *compressed_data;
+	void *original_data;
+	CompressionMetadata *compression_metadata;
+	int thread_num;
+	DataType data_type;
+
+};
+
+struct Position2dArray {
+	long slot;
+	long offset;
 };
 
 class NeuralNet {
@@ -93,8 +122,9 @@ public:
 
 	static void *threadFlagPrefetchDoneHelper(void *arg);
 	void threadFlagPrefetchDone(int index);
+	CompressedData *compressed_data;
 
-
+	CompressionThreadArgs **compression_thread_args;
 
 	// ---------------------- vDNN ext end ------------------------
 
@@ -119,6 +149,9 @@ public:
 	std::queue<int, std::list<int> > compression_queue;
 	pthread_mutex_t lock_compression_queue;
 	pthread_cond_t cond_compression_job_available;
+
+	CompressedData *compressed_data;
+	CompressionMetadata *compression_metadata;
 
 	// ---------------------- vDNN ext cmp end --------------------
 

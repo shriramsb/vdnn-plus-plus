@@ -371,7 +371,84 @@ NeuralNet::NeuralNet(std::vector<LayerSpecifier> &layers, DataType data_type, in
 	checkPMutexErrors(pthread_mutex_init(&lock_compression_queue, NULL));
 	checkPCondErrors(pthread_cond_init(&cond_compression_job_available, NULL));
 
-	
+
+	// allocate space for compressed_data_pointers
+	compressed_data = (CompressedData *)malloc(num_layers * sizeof(CompressedData));
+	for (int i = 0; i < num_layers; i++) {
+		if (to_compress[i]) {
+			checkCudaErrors(cudaMallocHost((void **)&compressed_data[i].data, NUM_COMPRESSION_THREADS * sizeof(void **)));
+			checkCudaErrors(cudaMallocHost((void **)&compressed_data[i].slot_taken, NUM_COMPRESSION_THREADS * sizeof(bool *)));
+			for (int j = 0; j < NUM_COMPRESSION_THREADS; j++) {
+				checkCudaErrors(cudaMallocHost((void **)&compressed_data[i].data[j], COMPRESSION_DISCRETIZATION_FACTOR * sizeof(void *)));
+				checkCudaErrors(cudaMallocHost((void **)&compressed_data[i].slot_taken[j], COMPRESSION_DISCRETIZATION_FACTOR * sizeof(bool)));
+			}
+		}
+	}
+
+	if (COMPRESSION_BATCH_SIZE != sizeof(unsigned int)) {
+		std::cout << "Panic!! COMPRESSION_BATCH_SIZE = 32\n sizeof(unsigned int) = " << sizeof(unsigned int) << endl;
+		std::cout << "Sizes do not match\n";
+	}
+
+	// calculate compression_metadata - for each layer, for each thread,
+	compression_metadata = (CompressionMetadata *)malloc(num_layers * sizeof(CompressionMetadata));
+	for (int i = 0; i < num_layers; i++) {
+		if (to_compress[i]) {
+			compression_metadata[i].num_compression_batches = (long *)malloc(NUM_COMPRESSION_THREADS * sizeof(long));
+			compression_metadata[i].num_elements = (long *)malloc(NUM_COMPRESSION_THREADS * sizeof(long));
+			compression_metadata[i].start_pos = (long *)malloc(NUM_COMPRESSION_THREADS * sizeof(long));
+			compression_metadata[i].slot_size = (long **)malloc(NUM_COMPRESSION_THREADS * sizeof(long *));
+			for (int j = 0; j < NUM_COMPRESSION_THREADS; j++) {
+				compression_metadata[i].slot_size[j] = (long *)malloc(COMPRESSION_DISCRETIZATION_FACTOR * sizeof(long));
+			}
+			compression_metadata[i].total_compression_batches = ceil(1.0 * layer_input_size[i] / COMPRESSION_BATCH_SIZE);
+			for (int j = 0; j < NUM_COMPRESSION_THREADS; j++) {
+				compression_metadata[i].num_compression_batches[j] = compression_metadata[i].total_compression_batches / NUM_COMPRESSION_THREADS;
+			}
+			long num_leftout_compression_batches = compression_metadata[i].total_compression_batches % NUM_COMPRESSION_THREADS;
+			for (int j = 0; j < num_leftout_compression_batches; j++) {
+				compression_metadata[i].num_compression_batches[NUM_COMPRESSION_THREADS - 1 - j] += 1;
+			}
+			for (int j = 0; j < NUM_COMPRESSION_THREADS; j++) {
+				if (j < NUM_COMPRESSION_THREADS - 1) {
+					compression_metadata[i].num_elements[j] = compression_metadata[i].num_compression_batches[j] * COMPRESSION_BATCH_SIZE;
+				}
+				else {
+					compression_metadata[i].num_elements[j] = (compression_metadata[i].num_compression_batches[j] - 1) * COMPRESSION_BATCH_SIZE;
+					if (layer_input_size[i] % COMPRESSION_BATCH_SIZE == 0)
+						compression_metadata[i].num_elements[j] += COMPRESSION_BATCH_SIZE;
+					else
+						compression_metadata[i].num_elements[j] += layer_input_size[i] % COMPRESSION_BATCH_SIZE;
+				}
+			}
+			long cumulative_start_pos = 0;
+			for (int j = 0; j < NUM_COMPRESSION_THREADS; j++) {
+				compression_metadata[i].start_pos[j] = cumulative_start_pos;
+				cumulative_start_pos += compression_metadata[i].num_elements[j];
+			}
+			for (int j = 0; j < NUM_COMPRESSION_THREADS; j++) {
+				for (int k = 0; k < COMPRESSION_DISCRETIZATION_FACTOR; k++) {
+					compression_metadata[i].slot_size[j][k] = compression_metadata[i].num_elements[j] / COMPRESSION_DISCRETIZATION_FACTOR;
+				}
+				for (int k = 0; k < compression_metadata[i].num_elements[j] % COMPRESSION_DISCRETIZATION_FACTOR; k++) {
+					compression_metadata[i].slot_size[j][k] += 1;
+				}
+			}
+		}
+	}
+
+	// create args for compression threads
+	compression_thread_args = (CompressionThreadArgs **)malloc(num_layers * sizeof(CompressionThreadArgs *));
+	for (int i = 0; i < num_layers; i++) {
+		compression_thread_args[i] = (CompressionThreadArgs *)malloc(NUM_COMPRESSION_THREADS * sizeof(CompressionThreadArgs));
+		for (int j = 0; j < NUM_COMPRESSION_THREADS; j++) {
+			compression_thread_args[i][j].compressed_data = &compressed_data[i];
+			compression_thread_args[i][j].original_data = h_layer_input[i];
+			compression_thread_args[i][j].compression_metadata = &compression_metadata[i];
+			compression_thread_args[i][j].thread_num = j;
+			compression_thread_args[i][j].data_type = data_type;
+		}
+	}
 
 	// ---------------------- vDNN ext cmp end --------------------
 
