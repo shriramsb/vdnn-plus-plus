@@ -70,7 +70,7 @@
 	  std::cerr << "Error in file " << __FILE__ << " on line " << __LINE__ << ": "      \
 				<< cnmemGetErrorString(status) << std::endl; 							\
 	  std::exit(EXIT_FAILURE);                               							\
-	}                                                        							\
+	}                                                      								\																		\
 }
 
 struct LayerDimension {
@@ -90,18 +90,19 @@ __global__ void fillValue(T *v, int size, int value) {
 void outOfMemory();
 
 struct CnmemSpace {
-	long free_bytes;
-	long initial_free_bytes;
+	size_t free_bytes;
+	size_t initial_free_bytes;
+	bool out_of_memory;
 
 	enum Op {ADD, SUB};
 
-	CnmemSpace(long free_bytes);
+	CnmemSpace(size_t free_bytes);
 
-	void updateSpace(Op op, long size);
+	void updateSpace(Op op, size_t size);
 
 	bool isAvailable();
 
-	long getConsumed();
+	size_t getConsumed();
 
 	void updateMaxConsume(size_t &max_consume);
 

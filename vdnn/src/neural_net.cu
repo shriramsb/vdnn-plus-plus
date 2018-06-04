@@ -423,12 +423,12 @@ bool NeuralNet::simulateNeuralNetworkMemory(vDNNConvAlgoPref algo_pref, bool har
 
 		if (layer_type[i] == CONV) {
 			ConvLayerParams *cur_params = (ConvLayerParams *)params[i];
-
-			long cur_workspace_size = cur_params->getWorkspaceSize(space_tracker.free_bytes, ConvLayerParams::FWD, algo_pref, hard);
+			size_t cur_workspace_size;
+			checkWORKSPACE(cur_params->getWorkspaceSize(space_tracker.free_bytes, ConvLayerParams::FWD, algo_pref, hard, cur_workspace_size));
 			space_tracker.updateSpace(CnmemSpace::SUB, cur_workspace_size);
 			space_tracker.updateMaxConsume(max_consume);
 
-			if (cur_workspace_size == -1 or !space_tracker.isAvailable())
+			if (!space_tracker.isAvailable())
 				return false;
 			std::cerr << "Used space after workspace allocation(MB): " << space_tracker.getConsumed() << std::endl;
 
@@ -485,12 +485,13 @@ bool NeuralNet::simulateNeuralNetworkMemory(vDNNConvAlgoPref algo_pref, bool har
 
 		if (layer_type[i] == CONV) {
 			ConvLayerParams *cur_params = (ConvLayerParams *)params[i];
-			long cur_filter_workspace_size = cur_params->getWorkspaceSize(space_tracker.free_bytes, ConvLayerParams::BWD_FILTER, algo_pref, hard);
-			long cur_data_workspace_size = 0;
+			size_t cur_filter_workspace_size;
+			checkWORKSPACE(cur_params->getWorkspaceSize(space_tracker.free_bytes, ConvLayerParams::BWD_FILTER, algo_pref, hard, cur_filter_workspace_size));
+			size_t cur_data_workspace_size = 0;
 			if (i > 0)
-				cur_data_workspace_size = cur_params->getWorkspaceSize(space_tracker.free_bytes, ConvLayerParams::BWD_DATA, algo_pref, hard);
+				checkWORKSPACE(cur_params->getWorkspaceSize(space_tracker.free_bytes, ConvLayerParams::BWD_DATA, algo_pref, hard, cur_data_workspace_size));
 
-			long cur_workspace_size = (cur_filter_workspace_size > cur_data_workspace_size) ? cur_filter_workspace_size :cur_data_workspace_size;
+			size_t cur_workspace_size = (cur_filter_workspace_size > cur_data_workspace_size) ? cur_filter_workspace_size :cur_data_workspace_size;
 
 			space_tracker.updateSpace(CnmemSpace::SUB, cur_workspace_size);
 			std::cerr << "Used space after allocating workspace(MB): " << space_tracker.getConsumed() << std::endl;
@@ -504,7 +505,7 @@ bool NeuralNet::simulateNeuralNetworkMemory(vDNNConvAlgoPref algo_pref, bool har
 			}
 
 			// std::cerr << "max_consume: " << max_consume << std::endl;
-			if (cur_filter_workspace_size == -1 or cur_data_workspace_size == -1 or !space_tracker.isAvailable())
+			if (!space_tracker.isAvailable())
 				return false;
 
 			// current layer computation over, deallocate workspace
@@ -626,7 +627,7 @@ bool NeuralNet::simulateCNMEMMemory(size_t &max_consume) {
 
 	for (int i = num_layers - 1; i >= 0; i--) {
 		// ---------------------- vDNN start ----------------------
-		int cur_filter_workspace_size, cur_data_workspace_size, cur_workspace_size;
+		size_t cur_filter_workspace_size, cur_data_workspace_size, cur_workspace_size;
 		void *cur_workspace;
 
 		if (i > 0) {
@@ -648,7 +649,8 @@ bool NeuralNet::simulateCNMEMMemory(size_t &max_consume) {
 
 			// allocate space for derivative
 			if (!pre_alloc_conv_derivative) {
-				cur_params->cnmemAllocDerivatives(data_type_size, NULL);
+				if (!cur_params->cnmemAllocDerivativesCheck(data_type_size, NULL))
+					return false;
 			}
 
 			cur_filter_workspace_size = cur_params->bwd_filter_workspace_size;
@@ -664,7 +666,8 @@ bool NeuralNet::simulateCNMEMMemory(size_t &max_consume) {
 			FCLayerParams *cur_params = (FCLayerParams *)params[i];
 
 			if (!pre_alloc_fc_derivative) {
-				cur_params->cnmemAllocDerivatives(data_type_size, NULL);
+				if (!cur_params->cnmemAllocDerivativesCheck(data_type_size, NULL))
+					return false;
 			}
 		}
 
@@ -672,7 +675,8 @@ bool NeuralNet::simulateCNMEMMemory(size_t &max_consume) {
 			BatchNormLayerParams *cur_params = (BatchNormLayerParams *)params[i];
 
 			if (!pre_alloc_batch_norm_derivative) {
-				cur_params->cnmemAllocDerivatives(data_type_size, NULL);
+				if (!cur_params->cnmemAllocDerivativesCheck(data_type_size, NULL))
+					return false;
 			}
 		}
 
@@ -1153,7 +1157,7 @@ void NeuralNet::getLoss(void *X, int *y, double learning_rate, std::vector<float
 	}
 	for (int i = num_layers - 1; i >= 0; i--) {
 		// ---------------------- vDNN start ----------------------
-		int cur_filter_workspace_size, cur_data_workspace_size, cur_workspace_size;
+		size_t cur_filter_workspace_size, cur_data_workspace_size, cur_workspace_size;
 		void *cur_workspace;
 
 		if (i > 0) {
