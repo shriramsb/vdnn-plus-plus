@@ -521,7 +521,7 @@ cnmemStatus_t Manager::allocateBlockUnsafe(Block *&curr, Block *&prev, std::size
     for( ; next && next->getData() < data ; next = next->getNext() ) {
         prev = next;
     }
-    curr = new Block((char*) data, size, next, false);
+    curr = new Block((char*) data, size, next, true);
     if( !curr ) {
         return CNMEM_STATUS_OUT_OF_MEMORY;
     }

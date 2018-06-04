@@ -423,12 +423,12 @@ bool NeuralNet::simulateNeuralNetworkMemory(vDNNConvAlgoPref algo_pref, bool har
 
 		if (layer_type[i] == CONV) {
 			ConvLayerParams *cur_params = (ConvLayerParams *)params[i];
-
-			long cur_workspace_size = cur_params->getWorkspaceSize(space_tracker.free_bytes, ConvLayerParams::FWD, algo_pref, hard);
+			size_t cur_workspace_size;
+			checkWORKSPACE(cur_params->getWorkspaceSize(space_tracker.free_bytes, ConvLayerParams::FWD, algo_pref, hard, cur_workspace_size));
 			space_tracker.updateSpace(CnmemSpace::SUB, cur_workspace_size);
 			space_tracker.updateMaxConsume(max_consume);
 
-			if (cur_workspace_size == -1 or !space_tracker.isAvailable())
+			if (!space_tracker.isAvailable())
 				return false;
 			std::cerr << "Used space after workspace allocation(MB): " << space_tracker.getConsumed() << std::endl;
 
@@ -485,12 +485,13 @@ bool NeuralNet::simulateNeuralNetworkMemory(vDNNConvAlgoPref algo_pref, bool har
 
 		if (layer_type[i] == CONV) {
 			ConvLayerParams *cur_params = (ConvLayerParams *)params[i];
-			long cur_filter_workspace_size = cur_params->getWorkspaceSize(space_tracker.free_bytes, ConvLayerParams::BWD_FILTER, algo_pref, hard);
-			long cur_data_workspace_size = 0;
+			size_t cur_filter_workspace_size;
+			checkWORKSPACE(cur_params->getWorkspaceSize(space_tracker.free_bytes, ConvLayerParams::BWD_FILTER, algo_pref, hard, cur_filter_workspace_size));
+			size_t cur_data_workspace_size = 0;
 			if (i > 0)
-				cur_data_workspace_size = cur_params->getWorkspaceSize(space_tracker.free_bytes, ConvLayerParams::BWD_DATA, algo_pref, hard);
+				checkWORKSPACE(cur_params->getWorkspaceSize(space_tracker.free_bytes, ConvLayerParams::BWD_DATA, algo_pref, hard, cur_data_workspace_size));
 
-			long cur_workspace_size = (cur_filter_workspace_size > cur_data_workspace_size) ? cur_filter_workspace_size :cur_data_workspace_size;
+			size_t cur_workspace_size = (cur_filter_workspace_size > cur_data_workspace_size) ? cur_filter_workspace_size :cur_data_workspace_size;
 
 			space_tracker.updateSpace(CnmemSpace::SUB, cur_workspace_size);
 			std::cerr << "Used space after allocating workspace(MB): " << space_tracker.getConsumed() << std::endl;
@@ -504,7 +505,7 @@ bool NeuralNet::simulateNeuralNetworkMemory(vDNNConvAlgoPref algo_pref, bool har
 			}
 
 			// std::cerr << "max_consume: " << max_consume << std::endl;
-			if (cur_filter_workspace_size == -1 or cur_data_workspace_size == -1 or !space_tracker.isAvailable())
+			if (!space_tracker.isAvailable())
 				return false;
 
 			// current layer computation over, deallocate workspace
@@ -626,7 +627,7 @@ bool NeuralNet::simulateCNMEMMemory(size_t &max_consume) {
 
 	for (int i = num_layers - 1; i >= 0; i--) {
 		// ---------------------- vDNN start ----------------------
-		int cur_filter_workspace_size, cur_data_workspace_size, cur_workspace_size;
+		size_t cur_filter_workspace_size, cur_data_workspace_size, cur_workspace_size;
 		void *cur_workspace;
 
 		if (i > 0) {
@@ -648,7 +649,8 @@ bool NeuralNet::simulateCNMEMMemory(size_t &max_consume) {
 
 			// allocate space for derivative
 			if (!pre_alloc_conv_derivative) {
-				cur_params->cnmemAllocDerivatives(data_type_size, NULL);
+				if (!cur_params->cnmemAllocDerivativesCheck(data_type_size, NULL))
+					return false;
 			}
 
 			cur_filter_workspace_size = cur_params->bwd_filter_workspace_size;
@@ -664,7 +666,8 @@ bool NeuralNet::simulateCNMEMMemory(size_t &max_consume) {
 			FCLayerParams *cur_params = (FCLayerParams *)params[i];
 
 			if (!pre_alloc_fc_derivative) {
-				cur_params->cnmemAllocDerivatives(data_type_size, NULL);
+				if (!cur_params->cnmemAllocDerivativesCheck(data_type_size, NULL))
+					return false;
 			}
 		}
 
@@ -672,7 +675,8 @@ bool NeuralNet::simulateCNMEMMemory(size_t &max_consume) {
 			BatchNormLayerParams *cur_params = (BatchNormLayerParams *)params[i];
 
 			if (!pre_alloc_batch_norm_derivative) {
-				cur_params->cnmemAllocDerivatives(data_type_size, NULL);
+				if (!cur_params->cnmemAllocDerivativesCheck(data_type_size, NULL))
+					return false;
 			}
 		}
 
@@ -1153,11 +1157,9 @@ void NeuralNet::getLoss(void *X, int *y, double learning_rate, std::vector<float
 	}
 	for (int i = num_layers - 1; i >= 0; i--) {
 		// ---------------------- vDNN start ----------------------
-		int cur_filter_workspace_size, cur_data_workspace_size, cur_workspace_size;
+		size_t cur_filter_workspace_size, cur_data_workspace_size, cur_workspace_size;
 		void *cur_workspace;
 
-		// std::cout << "bkwd layer : " << i << std::endl;
-		
 		if (i > 0) {
 			if (layer_type[i] == ACTV or layer_type[i] == SOFTMAX) {
 				dlayer_input[i] = dlayer_input[i + 1];
@@ -1198,19 +1200,10 @@ void NeuralNet::getLoss(void *X, int *y, double learning_rate, std::vector<float
 												&beta,
 												cur_params->output_tensor, dlayer_input[i + 1]));
 			}
-			
-			// checkCudaErrors(cudaDeviceSynchronize());
 
 			// allocate space for derivative
 			if (!pre_alloc_conv_derivative) {
-				// if (i == 1)
-				// 	cur_params->dW = (void *)0x0001;
-				// std::cout << "pre_alloc_conv_derivative " << pre_alloc_conv_derivative << " " << i << std::endl;
 				cur_params->cnmemAllocDerivatives(data_type_size, NULL);
-				// if (i == 1 and cur_params->dW == (void *)0x0001) {
-				// 	std::cout << "Problem with allocation\n";
-				// 	printf("%x\n", cur_params->dW);
-				// }
 				space_tracker.updateSpace(CnmemSpace::SUB, cur_params->kernel_size * data_type_size);
 				space_tracker.updateSpace(CnmemSpace::SUB, cur_params->C_out * data_type_size);
 			}
@@ -1229,63 +1222,16 @@ void NeuralNet::getLoss(void *X, int *y, double learning_rate, std::vector<float
 													&beta,
 													cur_params->bias_desc, cur_params->db));
 
-			// checkCudaErrors(cudaDeviceSynchronize());
 			// std::cout << "neural_net: backward conv i:" << i << std::endl;
-			if (i == 1) {
-				// void *dW, *input_data, *doutput_data;
-				// checkCudaErrors(cudaMalloc(&dW, 64 * 64 * 3 * 3 * sizeof(float)));
-				// checkCudaErrors(cudaMalloc(&input_data, batch_size * 64 * 224 * 224 * data_type_size));
-				// checkCudaErrors(cudaMalloc(&doutput_data, batch_size * 64 * 224 * 224 * data_type_size));
-				// // checkCUDNN(cudnnConvolutionBackwardFilter(cudnn_handle, &alpha,
-				// // 											cur_params->input_tensor, input_data,
-				// // 											cur_params->output_tensor, doutput_data,
-				// // 											cur_params->conv_desc, cur_params->bwd_filter_algo,
-				// // 											cur_workspace, cur_workspace_size,
-				// // 											&beta, 
-				// // 											cur_params->filter_desc,
-				// // 											dW));
-				// checkCudaErrors(cudaDeviceSynchronize());
-				// checkCudaErrors(cudaFree(dW));
-				// checkCudaErrors(cudaFree(input_data));
-				// checkCudaErrors(cudaFree(doutput_data));
-				// void *h_dW, *h_input_data, *h_doutput_data, *h_workspace;
-				// checkCudaErrors(cudaMallocHost(&h_dW, 64 * 64 * 3 * 3 * sizeof(float)));
-				// checkCudaErrors(cudaMallocHost(&h_input_data, batch_size * 64 * 224 * 224 * sizeof(float)));
-				// checkCudaErrors(cudaMallocHost(&h_doutput_data, batch_size * 64 * 224 * 224 * sizeof(float)));
-				// checkCudaErrors(cudaMallocHost(&h_workspace, cur_workspace_size));
-				// checkCudaErrors(cudaMemcpy(h_dW, cur_params->dW, 64 * 64 * 3 * 3 * sizeof(float), cudaMemcpyDeviceToHost));
-				// checkCudaErrors(cudaMemcpy(h_input_data, layer_input[i], batch_size * 64 * 224 * 224 * sizeof(float), cudaMemcpyDeviceToHost));
-				// checkCudaErrors(cudaMemcpy(h_doutput_data, dlayer_input[i + 1], batch_size * 64 * 224 * 224 * sizeof(float), cudaMemcpyDeviceToHost));
-				// checkCudaErrors(cudaMemcpy(h_workspace, cur_workspace, cur_workspace_size, cudaMemcpyDeviceToHost));
-				// {
-				// 	int n;
-				// 	std::cout << "waiting..\n";
-				// 	std::cout << "workspace: " << cur_workspace_size / (1.0 * 1024 * 1024) << std::endl;
-				// 	std::cout << "bwd_filter_algo: " << cur_params->bwd_filter_algo << std::endl;
-				// 	// std::cin >> n;
-				// }
-				checkCUDNN(cudnnConvolutionBackwardFilter(cudnn_handle, &alpha,
-															cur_params->input_tensor, layer_input[i],
-															cur_params->output_tensor, dlayer_input[i + 1],
-															cur_params->conv_desc, cur_params->bwd_filter_algo,
-															cur_workspace, cur_workspace_size,
-															&beta, 
-															cur_params->filter_desc, cur_params->dW));
-				// checkCudaErrors(cudaFreeHost(h_dW));
-				// checkCudaErrors(cudaFreeHost(h_input_data));
-				// checkCudaErrors(cudaFreeHost(h_doutput_data));
-				// checkCudaErrors(cudaFreeHost(h_workspace));
-			}
-			else {
-				checkCUDNN(cudnnConvolutionBackwardFilter(cudnn_handle, &alpha,
-															cur_params->input_tensor, layer_input[i],
-															cur_params->output_tensor, dlayer_input[i + 1],
-															cur_params->conv_desc, cur_params->bwd_filter_algo,
-															cur_workspace, cur_workspace_size,
-															&beta, 
-															cur_params->filter_desc,
-															cur_params->dW));
-			}
+
+			checkCUDNN(cudnnConvolutionBackwardFilter(cudnn_handle, &alpha,
+														cur_params->input_tensor, layer_input[i],
+														cur_params->output_tensor, dlayer_input[i + 1],
+														cur_params->conv_desc, cur_params->bwd_filter_algo,
+														cur_workspace, cur_workspace_size,
+														&beta, 
+														cur_params->filter_desc,
+														cur_params->dW));
 			if (i > 0)
 				checkCUDNN(cudnnConvolutionBackwardData(cudnn_handle, &alpha,
 														cur_params->filter_desc, cur_params->W,

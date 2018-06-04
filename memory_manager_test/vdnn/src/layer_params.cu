@@ -146,6 +146,12 @@ void ConvLayerParams::cnmemAllocDerivatives(size_t data_type_size, cudaStream_t 
 	checkCNMEM(cnmemMalloc(&db, C_out * data_type_size, stream));
 }
 
+bool ConvLayerParams::cnmemAllocDerivativesCheck(size_t data_type_size, cudaStream_t stream) {
+	checkCNMEMRet(cnmemMalloc(&dW, kernel_size * data_type_size, stream));
+	checkCNMEMRet(cnmemMalloc(&db, C_out * data_type_size, stream));
+	return true;
+}
+
 void ConvLayerParams::stepParams(cublasHandle_t cublas_handle, double learning_rate) {
 	float Salpha = -learning_rate;
 	double Dalpha = -learning_rate;
@@ -238,29 +244,33 @@ size_t ConvLayerParams::getWorkspaceSize(size_t &free_bytes, ConvLayerParams::Co
 	return 0;
 }
 
-long ConvLayerParams::getWorkspaceSize(long &free_bytes, ConvLayerParams::ConvDirection conv_direction, vDNNConvAlgoPref algo_pref, bool hard_pref) {
+workspaceStatus_t ConvLayerParams::getWorkspaceSize(size_t &free_bytes, ConvLayerParams::ConvDirection conv_direction, vDNNConvAlgoPref algo_pref, 
+										bool hard_pref, size_t &workspace_size) {
 	if (hard_pref) {
 		if (algo_pref == PREFER_PERFORMANCE_OPTIMAL) {
 			if (conv_direction == FWD) {
-				if (fwd_perf[0].memory > free_bytes || fwd_perf[0].status != CUDNN_STATUS_SUCCESS)
-					return -1;
+				if (fwd_perf[0].memory > free_bytes)
+					return WORKSPACE_STATUS_OUT_OF_MEMORY;
 				fwd_algo = fwd_perf[0].algo;
 				fwd_workspace_size = fwd_perf[0].memory;
-				return fwd_workspace_size;
+				workspace_size = fwd_workspace_size;
+				return WORKSPACE_STATUS_SUCCESS;
 			}
 			else if (conv_direction == BWD_FILTER) {
-				if (bwd_filter_perf[0].memory > free_bytes || bwd_filter_perf[0].status != CUDNN_STATUS_SUCCESS)
-					return -1;
+				if (bwd_filter_perf[0].memory > free_bytes)
+					return WORKSPACE_STATUS_OUT_OF_MEMORY;
 				bwd_filter_algo = bwd_filter_perf[0].algo;
 				bwd_filter_workspace_size = bwd_filter_perf[0].memory;
-				return bwd_filter_workspace_size;
+				workspace_size = bwd_filter_workspace_size;
+				return WORKSPACE_STATUS_SUCCESS;
 			}
 			else if (conv_direction == BWD_DATA) {
-				if (bwd_data_perf[0].memory > free_bytes || bwd_data_perf[0].status != CUDNN_STATUS_SUCCESS)
-					return -1;
+				if (bwd_data_perf[0].memory > free_bytes)
+					return WORKSPACE_STATUS_OUT_OF_MEMORY;
 				bwd_data_algo = bwd_data_perf[0].algo;
 				bwd_data_workspace_size = bwd_data_perf[0].memory;
-				return bwd_data_workspace_size;
+				workspace_size = bwd_data_workspace_size;
+				return WORKSPACE_STATUS_SUCCESS;
 			}
 		}
 		else if (algo_pref == PREFER_MEMORY_OPTIMAL) {
@@ -270,10 +280,11 @@ long ConvLayerParams::getWorkspaceSize(long &free_bytes, ConvLayerParams::ConvDi
 						if (fwd_perf[i].memory < free_bytes && fwd_perf[i].status == CUDNN_STATUS_SUCCESS) {
 							fwd_algo = fwd_perf[i].algo;
 							fwd_workspace_size = fwd_perf[i].memory;
-							return fwd_workspace_size;
+							workspace_size = fwd_workspace_size;
+							return WORKSPACE_STATUS_SUCCESS;
 						}
 						else
-							return -1;
+							return WORKSPACE_STATUS_OUT_OF_MEMORY;
 				}
 			}
 			else if (conv_direction == BWD_FILTER) {
@@ -284,10 +295,11 @@ long ConvLayerParams::getWorkspaceSize(long &free_bytes, ConvLayerParams::ConvDi
 							// std::cout << "Free bytes " << free_bytes << std::endl;
 							// std::cout << "bwd_filter_perf[i].memory " << bwd_filter_perf[i].memory << std::endl;
 							bwd_filter_workspace_size = bwd_filter_perf[i].memory;
-							return bwd_filter_workspace_size;
+							workspace_size = bwd_filter_workspace_size;
+							return WORKSPACE_STATUS_SUCCESS;
 						}
 						else
-							return -1;
+							return WORKSPACE_STATUS_OUT_OF_MEMORY;
 				}
 			}
 			else if (conv_direction == BWD_DATA) {
@@ -296,10 +308,11 @@ long ConvLayerParams::getWorkspaceSize(long &free_bytes, ConvLayerParams::ConvDi
 						if (bwd_data_perf[i].memory < free_bytes && bwd_data_perf[i].status == CUDNN_STATUS_SUCCESS) {
 							bwd_data_algo = bwd_data_perf[i].algo;
 							bwd_data_workspace_size = bwd_data_perf[i].memory;
-							return bwd_data_workspace_size;
+							workspace_size = bwd_data_workspace_size;
+							return WORKSPACE_STATUS_SUCCESS;
 						}
 						else
-							return -1;
+							return WORKSPACE_STATUS_OUT_OF_MEMORY;
 				}
 			}
 		}
@@ -312,7 +325,8 @@ long ConvLayerParams::getWorkspaceSize(long &free_bytes, ConvLayerParams::ConvDi
 					if (fwd_perf[i].memory < free_bytes && fwd_perf[i].status == CUDNN_STATUS_SUCCESS) {
 						fwd_algo = fwd_perf[i].algo;
 						fwd_workspace_size = fwd_perf[i].memory;
-						return fwd_workspace_size;
+						workspace_size = fwd_workspace_size;
+						return WORKSPACE_STATUS_SUCCESS;
 					}
 				}
 			}
@@ -323,7 +337,8 @@ long ConvLayerParams::getWorkspaceSize(long &free_bytes, ConvLayerParams::ConvDi
 						// std::cout << "Free bytes " << free_bytes << std::endl;
 						// std::cout << "bwd_filter_perf[i].memory " << bwd_filter_perf[i].memory << std::endl;
 						bwd_filter_workspace_size = bwd_filter_perf[i].memory;
-						return bwd_filter_workspace_size;
+						workspace_size = bwd_filter_workspace_size;
+						return WORKSPACE_STATUS_SUCCESS;
 					}
 				}
 			}
@@ -332,13 +347,14 @@ long ConvLayerParams::getWorkspaceSize(long &free_bytes, ConvLayerParams::ConvDi
 					if (bwd_data_perf[i].memory < free_bytes && bwd_data_perf[i].status == CUDNN_STATUS_SUCCESS) {
 						bwd_data_algo = bwd_data_perf[i].algo;
 						bwd_data_workspace_size = bwd_data_perf[i].memory;
-						return bwd_data_workspace_size;
+						workspace_size = bwd_data_workspace_size;
+						return WORKSPACE_STATUS_SUCCESS;
 					}
 				}
 			}
 		}
 	}
-	return -1;
+	return WORKSPACE_STATUS_OUT_OF_MEMORY;
 }
 
 void FCLayerParams::initializeValues(FCDescriptor *user_params, int batch_size, cudnnTensorFormat_t tensor_format, cudnnDataType_t data_type, 
@@ -400,6 +416,12 @@ void FCLayerParams::allocateSpace(curandGenerator_t curand_gen, cudnnDataType_t 
 void FCLayerParams::cnmemAllocDerivatives(size_t data_type_size, cudaStream_t stream) {
 	checkCNMEM(cnmemMalloc(&dW, weight_matrix_size * data_type_size, stream));
 	checkCNMEM(cnmemMalloc(&db, C_out * data_type_size, stream));
+}
+
+bool FCLayerParams::cnmemAllocDerivativesCheck(size_t data_type_size, cudaStream_t stream) {
+	checkCNMEMRet(cnmemMalloc(&dW, weight_matrix_size * data_type_size, stream));
+	checkCNMEMRet(cnmemMalloc(&db, C_out * data_type_size, stream));
+	return true;
 }
 
 void FCLayerParams::stepParams(cublasHandle_t cublas_handle, double learning_rate) {
@@ -550,6 +572,12 @@ void BatchNormLayerParams::allocateSpace(cudnnDataType_t data_type, size_t data_
 void BatchNormLayerParams::cnmemAllocDerivatives(size_t data_type_size, cudaStream_t stream) {
 	checkCNMEM(cnmemMalloc(&dscale, allocation_size * data_type_size, stream));
 	checkCNMEM(cnmemMalloc(&dbias, allocation_size * data_type_size, stream));
+}
+
+bool BatchNormLayerParams::cnmemAllocDerivativesCheck(size_t data_type_size, cudaStream_t stream) {
+	checkCNMEMRet(cnmemMalloc(&dscale, allocation_size * data_type_size, stream));
+	checkCNMEMRet(cnmemMalloc(&dbias, allocation_size * data_type_size, stream));
+	return true;
 }
 
 void BatchNormLayerParams::stepParams(cublasHandle_t cublas_handle, double learning_rate) {
