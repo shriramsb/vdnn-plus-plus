@@ -213,3 +213,57 @@ void Solver::getTrainTime(std::vector<float> &loss, std::vector<float> &time, in
 	}
 	learning_rate *= learning_rate_decay;
 }
+
+void Solver::getComputationTime(std::vector<std::vector<float> > &fwd_computation_time, std::vector<std::vector<float> > &bwd_computation_time) {
+	int batch_size = model->batch_size;
+	int num_train_batches = num_train / model->batch_size;
+	for (int i = 0; i < num_epoch; i++) {
+		for (int j = 0; j < num_train_batches; j++) {
+			int start_sample = j * num_features * batch_size;
+
+			float milli;
+
+			std::vector<float> cur_fwd_computation_time, cur_bwd_computation_time; 
+			stepComputationTime(start_sample, j * batch_size, cur_fwd_vdnn_lag, cur_bwd_vdnn_lag);
+			
+			fwd_computation_time.push_back(cur_fwd_computation_time);
+			bwd_computation_time.push_back(cur_bwd_computation_time);
+			
+		}
+		learning_rate *= learning_rate_decay;	
+	}
+}
+
+void Solver::getTransferTime(std::vector<std::vector<float> > &fwd_transfer_time, std::vector<std::vector<float> > &bwd_transfer_time) {
+	int batch_size = model->batch_size;
+	int num_train_batches = num_train / model->batch_size;
+	for (int i = 0; i < num_epoch; i++) {
+		for (int j = 0; j < num_train_batches; j++) {
+			int start_sample = j * num_features * batch_size;
+
+			float milli;
+
+			std::vector<float> cur_fwd_transfer_time, cur_bwd_transfer_time; 
+			stepTransferTime(start_sample, j * batch_size, cur_fwd_vdnn_lag, cur_bwd_vdnn_lag);
+			
+			fwd_transfer_time.push_back(cur_fwd_transfer_time);
+			bwd_transfer_time.push_back(cur_bwd_transfer_time);
+			
+		}
+		learning_rate *= learning_rate_decay;	
+	}
+}
+
+float Solver::stepComputationTime(int start_X, int start_y, std::vector<float> &fwd_computation_time, std::vector<float> &bwd_computation_time) {
+	if (model->data_type == CUDNN_DATA_FLOAT)
+		model->getComputationTime(&(((float *)X_train)[start_X]), &y_train[start_y], learning_rate, fwd_computation_time, bwd_computation_time);
+	else if (model->data_type == CUDNN_DATA_DOUBLE)
+		model->getComputationTime(&(((double *)X_train)[start_X]), &y_train[start_y], learning_rate, fwd_computation_time, bwd_computation_time);
+}
+
+float Solver::stepTransferTime(int start_X, int start_y, std::vector<float> &fwd_transfer_time, std::vector<float> &bwd_transfer_time) {
+	if (model->data_type == CUDNN_DATA_FLOAT)
+		model->getTransferTime(&(((float *)X_train)[start_X]), &y_train[start_y], learning_rate, fwd_transfer_time, bwd_transfer_time);
+	else if (model->data_type == CUDNN_DATA_DOUBLE)
+		model->getTransferTime(&(((double *)X_train)[start_X]), &y_train[start_y], learning_rate, fwd_transfer_time, bwd_transfer_time);
+}
