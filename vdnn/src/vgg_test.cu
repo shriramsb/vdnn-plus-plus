@@ -107,6 +107,7 @@ void readMNIST(vector<vector<uchar> > &train_images, vector<vector<uchar> > &tes
 
 void printTimes(vector<float> &time, string filename);
 void printvDNNLag(vector<vector<float> > &fwd_vdnn_lag, vector<vector<float> > &bwd_vdnn_lag, string filename);
+void printComputationTransferTimes(vector<vector<float> > &fwd_times, vector<vector<float> >&bwd_times, bool computation, string filename);
 
 int main(int argc, char *argv[]) {
 
@@ -463,10 +464,10 @@ void printComputationTransferTimes(vector<vector<float> > &fwd_times, vector<vec
 
 	int N = fwd_times.size();
 	for (int i = 0; i < N; i++) {
-		for (int j = 0; j < fwd_vdnn_lag[i].size(); j++) {
+		for (int j = 0; j < fwd_times[i].size(); j++) {
 			f << "fwd" << j << ": " << fwd_times[i][j] << endl;
 		}
-		for (int j = 0; j < bwd_vdnn_lag[i].size(); j++) {
+		for (int j = 0; j < bwd_times[i].size(); j++) {
 			f << "bwd" << j << ": " << bwd_times[i][j] << endl;
 		}
 		f << endl;

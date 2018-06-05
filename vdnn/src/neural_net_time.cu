@@ -116,29 +116,17 @@ void NeuralNet::getComputationTime(void *X, int *y, double learning_rate,
 		else if (layer_type[i] == BATCHNORM) {
 			BatchNormLayerParams *cur_params = (BatchNormLayerParams *)params[i];
 
-			if (train == true) {
-				checkCUDNN(cudnnBatchNormalizationForwardTraining(cudnn_handle, cur_params->mode,
-																	&alpha, &beta,
-																	cur_params->input_tensor, layer_input[i],
-																	cur_params->input_tensor, layer_input[i + 1],
-																	cur_params->sbmv_desc,
-																	cur_params->scale, cur_params->bias,
-																	cur_params->factor,
-																	cur_params->running_mean, cur_params->running_variance,
-																	cur_params->epsilon,
-																	cur_params->result_save_mean, cur_params->result_save_inv_var));
+			checkCUDNN(cudnnBatchNormalizationForwardTraining(cudnn_handle, cur_params->mode,
+																&alpha, &beta,
+																cur_params->input_tensor, layer_input[i],
+																cur_params->input_tensor, layer_input[i + 1],
+																cur_params->sbmv_desc,
+																cur_params->scale, cur_params->bias,
+																cur_params->factor,
+																cur_params->running_mean, cur_params->running_variance,
+																cur_params->epsilon,
+																cur_params->result_save_mean, cur_params->result_save_inv_var));
 
-			}
-			else {
-				checkCUDNN(cudnnBatchNormalizationForwardInference(cudnn_handle, cur_params->mode,
-																	&alpha, &beta,
-																	cur_params->input_tensor, layer_input[i],
-																	cur_params->input_tensor, layer_input[i + 1],
-																	cur_params->sbmv_desc,
-																	cur_params->scale, cur_params->bias,
-																	cur_params->running_mean, cur_params->running_variance,
-																	cur_params->epsilon));
-			}
 		}
 		else if (layer_type[i] == POOLING) {
 			PoolingLayerParams *cur_params = (PoolingLayerParams *)params[i];
@@ -162,14 +150,12 @@ void NeuralNet::getComputationTime(void *X, int *y, double learning_rate,
 			// std::cout << "Softmax\n";
 			std::cout << "Panic!! SOFTMAX wrong place\n";
 			exit(0);
-			if (train == true) {
-				SoftmaxLayerParams *cur_params = (SoftmaxLayerParams *)params[i];
-				checkCUDNN(cudnnSoftmaxForward(cudnn_handle, cur_params->algo, cur_params->mode,
-												&alpha,
-												cur_params->input_tensor, layer_input[i],
-												&beta,
-												cur_params->input_tensor, layer_input[i + 1]));
-			}
+			SoftmaxLayerParams *cur_params = (SoftmaxLayerParams *)params[i];
+			checkCUDNN(cudnnSoftmaxForward(cudnn_handle, cur_params->algo, cur_params->mode,
+											&alpha,
+											cur_params->input_tensor, layer_input[i],
+											&beta,
+											cur_params->input_tensor, layer_input[i + 1]));
 		}
 
 		// ---------------------- vDNN start ----------------------
@@ -180,15 +166,13 @@ void NeuralNet::getComputationTime(void *X, int *y, double learning_rate,
 		// the case in above if for ACTV and SOFTMAX never occurs
 		if (layer_type[i + 1] == SOFTMAX) {
 			i++;
-			if (train == true) {
-				layer_input[i + 1] = layer_input[i];
-				SoftmaxLayerParams *cur_params = (SoftmaxLayerParams *)params[i];
-				checkCUDNN(cudnnSoftmaxForward(cudnn_handle, cur_params->algo, cur_params->mode,
-												&alpha,
-												cur_params->input_tensor, layer_input[i],
-												&beta,
-												cur_params->input_tensor, layer_input[i + 1]));
-			}
+			layer_input[i + 1] = layer_input[i];
+			SoftmaxLayerParams *cur_params = (SoftmaxLayerParams *)params[i];
+			checkCUDNN(cudnnSoftmaxForward(cudnn_handle, cur_params->algo, cur_params->mode,
+											&alpha,
+											cur_params->input_tensor, layer_input[i],
+											&beta,
+											cur_params->input_tensor, layer_input[i + 1]));
 			i--;
 		}
 
@@ -280,8 +264,6 @@ void NeuralNet::getComputationTime(void *X, int *y, double learning_rate,
 
 			if (!pre_alloc_fc_derivative) {
 				cur_params->cnmemAllocDerivatives(data_type_size, NULL);
-				space_tracker.updateSpace(CnmemSpace::SUB, cur_params->weight_matrix_size * data_type_size);
-				space_tracker.updateSpace(CnmemSpace::SUB, cur_params->C_out * data_type_size);
 			}
 		}
 
@@ -290,8 +272,6 @@ void NeuralNet::getComputationTime(void *X, int *y, double learning_rate,
 
 			if (!pre_alloc_batch_norm_derivative) {
 				cur_params->cnmemAllocDerivatives(data_type_size, NULL);
-				space_tracker.updateSpace(CnmemSpace::SUB, cur_params->allocation_size * data_type_size);
-				space_tracker.updateSpace(CnmemSpace::SUB, cur_params->allocation_size * data_type_size);
 			}
 		}
 
@@ -495,7 +475,7 @@ void NeuralNet::getComputationTime(void *X, int *y, double learning_rate,
 		float compute_time;
 		checkCudaErrors(cudaEventElapsedTime(&compute_time, start_compute, stop_compute));
 
-		bwd_computation_time.insert(bwd_vdnn_lag.begin(), compute_time);
+		bwd_computation_time.insert(bwd_computation_time.begin(), compute_time);
 
 		if (layer_type[i] == CONV) {
 			checkCNMEM(cnmemFree(cur_workspace, NULL));
@@ -511,7 +491,7 @@ void NeuralNet::getComputationTime(void *X, int *y, double learning_rate,
 			}
 		}
 		else if (layer_type[i] == BATCHNORM) {
-			if (train == true and !pre_alloc_batch_norm_derivative) {
+			if (!pre_alloc_batch_norm_derivative) {
 				BatchNormLayerParams *cur_params = (BatchNormLayerParams *)params[i];
 				cur_params->cnmemFreeDerivatives(NULL);
 			}
@@ -521,9 +501,6 @@ void NeuralNet::getComputationTime(void *X, int *y, double learning_rate,
 		checkCNMEM(cnmemFree(dlayer_input[i + 1], NULL));
 		checkCNMEM(cnmemFree(layer_input[i], NULL));
 		checkCNMEM(cnmemFree(dlayer_input[i], NULL));
-	}
-	if (space_tracker.getConsumed() != 0) {
-		std::cout << "Panic!! Space not updated properly\n";
 	}
 }
 
@@ -555,7 +532,6 @@ void NeuralNet::getTransferTime(void *X, int *y, double learning_rate, std::vect
 
 		checkCudaErrors(cudaEventRecord(stop_transfer, stream_memory));
 		checkCudaErrors(cudaEventSynchronize(stop_transfer));
-		float transfer_time;
 		checkCudaErrors(cudaEventElapsedTime(&transfer_time, start_transfer, stop_transfer));
 		bwd_transfer_time.push_back(transfer_time);
 	}

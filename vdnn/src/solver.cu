@@ -224,7 +224,7 @@ void Solver::getComputationTime(std::vector<std::vector<float> > &fwd_computatio
 			float milli;
 
 			std::vector<float> cur_fwd_computation_time, cur_bwd_computation_time; 
-			stepComputationTime(start_sample, j * batch_size, cur_fwd_vdnn_lag, cur_bwd_vdnn_lag);
+			stepComputationTime(start_sample, j * batch_size, cur_fwd_computation_time, cur_bwd_computation_time);
 			
 			fwd_computation_time.push_back(cur_fwd_computation_time);
 			bwd_computation_time.push_back(cur_bwd_computation_time);
@@ -244,7 +244,7 @@ void Solver::getTransferTime(std::vector<std::vector<float> > &fwd_transfer_time
 			float milli;
 
 			std::vector<float> cur_fwd_transfer_time, cur_bwd_transfer_time; 
-			stepTransferTime(start_sample, j * batch_size, cur_fwd_vdnn_lag, cur_bwd_vdnn_lag);
+			stepTransferTime(start_sample, j * batch_size, cur_fwd_transfer_time, cur_bwd_transfer_time);
 			
 			fwd_transfer_time.push_back(cur_fwd_transfer_time);
 			bwd_transfer_time.push_back(cur_bwd_transfer_time);
@@ -254,14 +254,14 @@ void Solver::getTransferTime(std::vector<std::vector<float> > &fwd_transfer_time
 	}
 }
 
-float Solver::stepComputationTime(int start_X, int start_y, std::vector<float> &fwd_computation_time, std::vector<float> &bwd_computation_time) {
+void Solver::stepComputationTime(int start_X, int start_y, std::vector<float> &fwd_computation_time, std::vector<float> &bwd_computation_time) {
 	if (model->data_type == CUDNN_DATA_FLOAT)
 		model->getComputationTime(&(((float *)X_train)[start_X]), &y_train[start_y], learning_rate, fwd_computation_time, bwd_computation_time);
 	else if (model->data_type == CUDNN_DATA_DOUBLE)
 		model->getComputationTime(&(((double *)X_train)[start_X]), &y_train[start_y], learning_rate, fwd_computation_time, bwd_computation_time);
 }
 
-float Solver::stepTransferTime(int start_X, int start_y, std::vector<float> &fwd_transfer_time, std::vector<float> &bwd_transfer_time) {
+void Solver::stepTransferTime(int start_X, int start_y, std::vector<float> &fwd_transfer_time, std::vector<float> &bwd_transfer_time) {
 	if (model->data_type == CUDNN_DATA_FLOAT)
 		model->getTransferTime(&(((float *)X_train)[start_X]), &y_train[start_y], learning_rate, fwd_transfer_time, bwd_transfer_time);
 	else if (model->data_type == CUDNN_DATA_DOUBLE)
