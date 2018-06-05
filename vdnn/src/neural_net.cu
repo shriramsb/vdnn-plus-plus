@@ -578,7 +578,7 @@ bool NeuralNet::simulateNeuralNetworkMemory(vDNNConvAlgoPref algo_pref, bool har
 	cnmemDevice_t cnmem_device;
 
 	cnmem_device.device = 0;
-	cnmem_device.size = max_consume;
+	cnmem_device.size = 0;
 	cnmem_device.numStreams = 0;
 	cnmem_device.streams = NULL;
 	cnmem_device.streamSizes = NULL;

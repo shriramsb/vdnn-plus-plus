@@ -70,7 +70,7 @@
 	  std::cerr << "Error in file " << __FILE__ << " on line " << __LINE__ << ": "      \
 				<< cnmemGetErrorString(status) << std::endl; 							\
 	  std::exit(EXIT_FAILURE);                               							\
-	}                                                      								\																		\
+	}                                                      								\
 }
 
 struct LayerDimension {

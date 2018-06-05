@@ -249,7 +249,7 @@ workspaceStatus_t ConvLayerParams::getWorkspaceSize(size_t &free_bytes, ConvLaye
 	if (hard_pref) {
 		if (algo_pref == PREFER_PERFORMANCE_OPTIMAL) {
 			if (conv_direction == FWD) {
-				if (fwd_perf[0].memory > free_bytes)
+				if (fwd_perf[0].memory > free_bytes && fwd_perf[0].status == CUDNN_STATUS_SUCCESS)
 					return WORKSPACE_STATUS_OUT_OF_MEMORY;
 				fwd_algo = fwd_perf[0].algo;
 				fwd_workspace_size = fwd_perf[0].memory;
@@ -257,7 +257,7 @@ workspaceStatus_t ConvLayerParams::getWorkspaceSize(size_t &free_bytes, ConvLaye
 				return WORKSPACE_STATUS_SUCCESS;
 			}
 			else if (conv_direction == BWD_FILTER) {
-				if (bwd_filter_perf[0].memory > free_bytes)
+				if (bwd_filter_perf[0].memory > free_bytes && bwd_filter_perf[0].status == CUDNN_STATUS_SUCCESS)
 					return WORKSPACE_STATUS_OUT_OF_MEMORY;
 				bwd_filter_algo = bwd_filter_perf[0].algo;
 				bwd_filter_workspace_size = bwd_filter_perf[0].memory;
@@ -265,7 +265,7 @@ workspaceStatus_t ConvLayerParams::getWorkspaceSize(size_t &free_bytes, ConvLaye
 				return WORKSPACE_STATUS_SUCCESS;
 			}
 			else if (conv_direction == BWD_DATA) {
-				if (bwd_data_perf[0].memory > free_bytes)
+				if (bwd_data_perf[0].memory > free_bytes && bwd_data_perf[0].status == CUDNN_STATUS_SUCCESS)
 					return WORKSPACE_STATUS_OUT_OF_MEMORY;
 				bwd_data_algo = bwd_data_perf[0].algo;
 				bwd_data_workspace_size = bwd_data_perf[0].memory;
