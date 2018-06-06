@@ -214,7 +214,7 @@ void Solver::getTrainTime(std::vector<float> &loss, std::vector<float> &time, in
 	learning_rate *= learning_rate_decay;
 }
 
-void Solver::getComputationTime(std::vector<std::vector<float> > &fwd_computation_time, std::vector<std::vector<float> > &bwd_computation_time) {
+void Solver::getComputationTime(long num_epoch, std::vector<std::vector<float> > &fwd_computation_time, std::vector<std::vector<float> > &bwd_computation_time) {
 	int batch_size = model->batch_size;
 	int num_train_batches = num_train / model->batch_size;
 	for (int i = 0; i < num_epoch; i++) {
@@ -234,7 +234,7 @@ void Solver::getComputationTime(std::vector<std::vector<float> > &fwd_computatio
 	}
 }
 
-void Solver::getTransferTime(std::vector<std::vector<float> > &fwd_transfer_time, std::vector<std::vector<float> > &bwd_transfer_time) {
+void Solver::getTransferTime(long num_epoch, std::vector<std::vector<float> > &fwd_transfer_time, std::vector<std::vector<float> > &bwd_transfer_time) {
 	int batch_size = model->batch_size;
 	int num_train_batches = num_train / model->batch_size;
 	for (int i = 0; i < num_epoch; i++) {

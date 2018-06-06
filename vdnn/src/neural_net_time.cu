@@ -500,7 +500,8 @@ void NeuralNet::getComputationTime(void *X, int *y, double learning_rate,
 		checkCNMEM(cnmemFree(layer_input[i + 1], NULL));
 		checkCNMEM(cnmemFree(dlayer_input[i + 1], NULL));
 		checkCNMEM(cnmemFree(layer_input[i], NULL));
-		checkCNMEM(cnmemFree(dlayer_input[i], NULL));
+		if (i > 0 && layer_type[i] != SOFTMAX)
+			checkCNMEM(cnmemFree(dlayer_input[i], NULL));
 	}
 }
 

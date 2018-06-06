@@ -386,10 +386,10 @@ int main(int argc, char *argv[]) {
 	printvDNNLag(fwd_vdnn_lag, bwd_vdnn_lag, filename);
 
 	vector<vector<float> > fwd_computation_time, bwd_computation_time;
-	solver.getComputationTime(fwd_computation_time, bwd_computation_time);
+	solver.getComputationTime(1, fwd_computation_time, bwd_computation_time);
 
 	vector<vector<float> > fwd_transfer_time, bwd_transfer_time;
-	solver.getTransferTime(fwd_transfer_time, bwd_transfer_time);
+	solver.getTransferTime(1, fwd_transfer_time, bwd_transfer_time);
 
 	printComputationTransferTimes(fwd_computation_time, bwd_computation_time, true, filename);
 	printComputationTransferTimes(fwd_transfer_time, bwd_transfer_time, false, filename);
