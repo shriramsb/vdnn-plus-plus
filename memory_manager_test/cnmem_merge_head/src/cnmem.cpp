@@ -31,6 +31,7 @@
 #include <vector>
 #include <cuda_runtime_api.h>
 #include <list>
+#include <algorithm>
 
 #if !defined(WIN32) && defined(_MSC_VER)
 #define WIN32
@@ -586,7 +587,6 @@ cnmemStatus_t Manager::allocateBlockUnsafe(Block *&curr, Block *&prev, std::size
 		CNMEM_CHECK_CUDA(cudaMalloc(&data, size));
 		CNMEM_DEBUG_INFO(">> returned address=0x%016lx\n", (size_t) data);
 		addCudaBlockUnsafe(data, size);
-		printf("here\n");
 	}
 	
 	// If it failed, there's an unexpected issue.
@@ -765,6 +765,12 @@ cnmemStatus_t Manager::printListUnsafe(FILE *file, const char *name, const Block
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
+bool cudaBlockPositionCompare(CudaBlock b1, CudaBlock b2) {
+	return (b1.ptr < b2.ptr);
+}
+
+
+///////////////////////////////////////////////////////////////////////////////////////////////////
 
 cnmemStatus_t Manager::printBothListsUnsafe(FILE *file, const Block *used_head, const Block *free_head) const {
 	std::size_t used_size = 0, free_size = 0;
@@ -782,33 +788,35 @@ cnmemStatus_t Manager::printBothListsUnsafe(FILE *file, const Block *used_head, 
 	fprintf(file, "| list=\"%s\", size=%lu\n", "used", used_size);
 	fprintf(file, "| list=\"%s\", size=%lu\n", "free", free_size);
 #endif
-
-	const Block *used_curr = used_head, *free_curr = free_head;
-	while (used_curr || free_curr) {
-		if ((used_curr && free_curr && used_curr->getData() < free_curr->getData()) || (used_curr && !free_curr)) {
+	std::vector<CudaBlock> used_list;
+	for (const Block *used_curr = used_head; used_curr; used_curr = used_curr->getNext()) {
+		used_list.push_back(CudaBlock((void *)used_curr->getData(), used_curr->getSize()));
+	}
+	std::sort(used_list.begin(), used_list.end(), cudaBlockPositionCompare);
+	size_t used_list_size = used_list.size();
+	const Block *free_curr = free_head;
+	int i = 0;
+	while (i != used_list_size || free_curr) {
+		if (((i < used_list_size) && free_curr && used_list[i].ptr < free_curr->getData()) || ((i < used_list_size) && !free_curr)) {
 #ifdef CNMEM_BUILD_WITH_32_BIT_POINTERS
-			fprintf(file, "| | node=0x%08x, data=0x%08x, size=%u, next=0x%08x, head=%2u, used\n",
+			fprintf(file, "| | data=0x%08x, end=0x%08x, size=%u, used\n",
 #else
-			fprintf(file, "| | node=0x%016lx, data=0x%016lx, size=%lu, next=0x%016lx, head=%2lu, used\n",
-#endif
-			(std::size_t) used_curr, 
-			(std::size_t) used_curr->getData(),
-			(std::size_t) used_curr->getSize(),
-			(std::size_t) used_curr->getNext(),
-			(std::size_t) used_curr->isHead ());
-			used_curr = used_curr->getNext();
+			fprintf(file, "| | data=0x%016lx, end=0x%016lx, size=%lu, used\n",
+#endif 
+			(std::size_t) used_list[i].ptr,
+			(std::size_t) ((char*)(used_list[i].ptr) + used_list[i].size),
+			(std::size_t) used_list[i].size);
+			i++;
 		} 
-		else if ((used_curr && free_curr && used_curr->getData() > free_curr->getData()) || (!used_curr && free_curr)) {
+		else if (((i < used_list_size) && free_curr && used_list[i].ptr > free_curr->getData()) || (!(i < used_list_size) && free_curr)) {
 #ifdef CNMEM_BUILD_WITH_32_BIT_POINTERS
-			fprintf(file, "| | node=0x%08x, data=0x%08x, size=%u, next=0x%08x, head=%2u, free\n",
+			fprintf(file, "| | data=0x%08x, end=0x%08x, size=%u, free\n",
 #else
-			fprintf(file, "| | node=0x%016lx, data=0x%016lx, size=%lu, next=0x%016lx, head=%2lu, free\n",
+			fprintf(file, "| | data=0x%016lx, end=0x%016lx, size=%lu, free\n",
 #endif
-			(std::size_t) free_curr, 
 			(std::size_t) free_curr->getData(),
-			(std::size_t) free_curr->getSize(),
-			(std::size_t) free_curr->getNext(),
-			(std::size_t) free_curr->isHead ());
+			(std::size_t) ((char *)(free_curr->getData()) + free_curr->getSize()),
+			(std::size_t) free_curr->getSize());
 			free_curr = free_curr->getNext();
 		}
 		else {
