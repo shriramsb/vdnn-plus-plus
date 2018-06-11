@@ -401,6 +401,9 @@ NeuralNet::NeuralNet(std::vector<LayerSpecifier> &layers, DataType data_type, in
 	// data of time
 	checkCudaErrors(cudaEventCreate(&start_compute));
 	checkCudaErrors(cudaEventCreate(&stop_compute));
+
+	checkCudaErrors(cudaEventCreate(&start_transfer));
+	checkCudaErrors(cudaEventCreate(&stop_transfer));
 }
 
 bool NeuralNet::simulateNeuralNetworkMemory(vDNNConvAlgoPref algo_pref, bool hard, size_t &exp_max_consume, size_t &max_consume) {
