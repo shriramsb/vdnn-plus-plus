@@ -14,7 +14,7 @@ int main() {
 	cnmemInit(1, &cnmem_device, CNMEM_FLAGS_DEFAULT);
 
 	void *p, *q;
-
+	cout << "cnmem initialized\n";
 	cnmemMalloc(&p, CNMEM_GRANULARITY, NULL);
 	cnmemMalloc(&q, CNMEM_GRANULARITY, NULL);
 	size_t free, total;
@@ -27,5 +27,26 @@ int main() {
 	cnmemMalloc(&p, CNMEM_GRANULARITY * 2, NULL);
 	cnmemMemGetInfo(&free, &total, NULL);
 	cout << "free: " << free << endl;
+	cout << "total: " << total << endl;
+	cnmemFinalize();
+
+	cnmemInit(1, &cnmem_device, CNMEM_FLAGS_DEFAULT);
+	
+	cnmemMemGetInfo(&free, &total, NULL);
+	cout << "free: " << free << endl;
 	cout << "total: " << total << endl;	
+	cnmemMalloc(&p, CNMEM_GRANULARITY, NULL);
+	cnmemMemGetInfo(&free, &total, NULL);
+	cout << "free: " << free << endl;
+	cout << "total: " << total << endl;
+
+	FILE *separate_stats;
+	FILE *together_stats;
+	separate_stats = fopen("separate_stats.dat", "w");
+	together_stats = fopen("together_stats.dat", "w");
+	cnmemPrintMemoryState(separate_stats, NULL);
+	cnmemPrintMemoryStateTogether(together_stats, NULL);
+	fclose(separate_stats);
+	fclose(together_stats);
+
 }
