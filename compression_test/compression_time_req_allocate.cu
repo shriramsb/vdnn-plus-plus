@@ -24,7 +24,7 @@ int n_threads = 8;
 int n_compressed_data_batches = 8;
 
 long layer_sizes_alexnet[] = {56l * 56 * 96, 28l * 28 * 96, 27l * 27 * 256, 13l * 13 * 256, 13l * 12 * 384, 13l * 12 * 384, 13l * 13 * 256, 6l * 6 * 256};
-bool layer_compress_alexnet[] = {true, false, true, true, true, false, false, false};
+bool layer_compress_alexnet[] = {true, true, true, true, true, true, true, true};
 long layer_density_alexnet[] = {50, 80, 40, 60, 70, 70, 30, 60};
 int num_layers_alexnet = 8;
 
@@ -66,24 +66,24 @@ long layer_density_vgg[] = {50,
 							10,
 							15
 							};
-bool layer_compress_vgg[] = {false,
-						true,
-						true,
-						false,
+bool layer_compress_vgg[] = {true,
 						true,
 						true,
 						true,
-						false,
 						true,
 						true,
 						true,
-						false,
 						true,
 						true,
 						true,
-						false,
-						false,
-						false};
+						true,
+						true,
+						true,
+						true,
+						true,
+						true,
+						true,
+						true};
 
 int num_layers_vgg = 18;
 
@@ -95,10 +95,10 @@ int num_layers_vgg = 18;
 // int num_layers = num_layers_alexnet;
 
 
-long *layer_sizes = layer_sizes_vgg;
-bool *layer_compress = layer_compress_vgg;
-long *layer_density = layer_density_vgg;
-int num_layers = num_layers_vgg;
+long *layer_sizes = layer_sizes_alexnet;
+bool *layer_compress = layer_compress_alexnet;
+long *layer_density = layer_density_alexnet;
+int num_layers = num_layers_alexnet;
 
 
 void *compressThread(void *arg) {
@@ -191,7 +191,7 @@ void *decompressThread(void *arg) {
 
 
 int main() {
-	int batch_size = 16;
+	int batch_size = 64;
 	long total_space = 0;
 	cudaEvent_t start, stop;
 	cudaEventCreate(&start);
@@ -357,7 +357,7 @@ int main() {
 		cudaEventSynchronize(stop);
 		float milli;
 		cudaEventElapsedTime(&milli, start, stop);
-		decompression_times.push_back(milli);
+		decompression_times.insert(decompression_times.begin(), milli);
 		total_milli_decompress += milli;
 		// cout << milli << endl;
 		// cudaFreeHost(compressed_data);

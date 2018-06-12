@@ -315,6 +315,14 @@ public:
 		checkCUDNN(cudnnFindConvolutionForwardAlgorithm(cudnnHandle, inputTensor, conv1Tensor, conv1Desc, conv1OTensor,
 													 req_algo_count, &ret_algo_count, conv1fwdperf));
 		cout << "Printing forward conv algo perf\n";
+		cout << "CUDNN_CONVOLUTION_FWD_ALGO_IMPLICIT_GEMM " << CUDNN_CONVOLUTION_FWD_ALGO_IMPLICIT_GEMM << endl;
+		cout << "CUDNN_CONVOLUTION_FWD_ALGO_IMPLICIT_PRECOMP_GEMM " << CUDNN_CONVOLUTION_FWD_ALGO_IMPLICIT_PRECOMP_GEMM << endl;
+		cout << "CUDNN_CONVOLUTION_FWD_ALGO_GEMM " << CUDNN_CONVOLUTION_FWD_ALGO_GEMM << endl;
+		cout << "CUDNN_CONVOLUTION_FWD_ALGO_DIRECT " << CUDNN_CONVOLUTION_FWD_ALGO_DIRECT << endl;
+		cout << "CUDNN_CONVOLUTION_FWD_ALGO_FFT " << CUDNN_CONVOLUTION_FWD_ALGO_FFT << endl;
+		cout << "CUDNN_CONVOLUTION_FWD_ALGO_FFT_TILING " << CUDNN_CONVOLUTION_FWD_ALGO_FFT_TILING << endl;
+		cout << "CUDNN_CONVOLUTION_FWD_ALGO_WINOGRAD " << CUDNN_CONVOLUTION_FWD_ALGO_WINOGRAD << endl;
+		cout << "CUDNN_CONVOLUTION_FWD_ALGO_WINOGRAD_NONFUSED " << CUDNN_CONVOLUTION_FWD_ALGO_WINOGRAD_NONFUSED << endl;
 		for (int i = 0; i < ret_algo_count; i++) {
 			cout << i << endl;
 			cout << "algo: " << conv1fwdperf[i].algo << endl;
@@ -353,6 +361,32 @@ public:
 			cout << endl;
 		}
 
+		float alpha = 1.0, beta = 0.0;
+		{
+			int n;
+			cout << "waiting..\n";
+			cin >> n;
+		}
+		void *layer_input, *dlayer_output, *workspace, *dW;
+		checkCudaErrors(cudaMalloc(&layer_input, batch_size * input_feature * input_rows * input_cols * sizeof(float)));
+		checkCudaErrors(cudaMalloc(&dlayer_output, batch_size * output_feature * input_rows * input_cols * sizeof(float)));
+		checkCudaErrors(cudaMalloc(&dW, output_feature * input_feature * filter_height * filter_width * sizeof(float)));
+		checkCudaErrors(cudaMalloc(&workspace, conv1bwdfperf[0].memory));
+		checkCUDNN(cudnnConvolutionBackwardFilter(cudnnHandle, 
+													&alpha, 
+													inputTensor, layer_input,
+													conv1OTensor, dlayer_output,
+													conv1Desc, 
+													conv1bwdfperf[0].algo, 
+													workspace, conv1bwdfperf[0].memory, 
+													&beta,
+													conv1Tensor, dW));
+		{
+			int n;
+			cout << "waiting..\n";
+			cin >> n;
+		}
+		exit(0);
 		// checkCUDNN(cudnnGetConvolutionForwardAlgorithm(cudnnHandle, inputTensor, conv1Tensor, conv1Desc, conv1OTensor,
 		// 												CUDNN_CONVOLUTION_FWD_PREFER_FASTEST, 0, &conv1fAlgo));
 		// size_t fwd_wspace;
@@ -452,7 +486,7 @@ public:
 		// checkCURAND(curandGenerateNormal(curandgen, W1, input_size_fc * hidden_size, 0, 0.1));
 		// checkCURAND(curandGenerateNormal(curandgen, W2, hidden_size * output_size, 0, 0.1));
 
-		checkCURAND(curandGenerateNormal(curandgen, conv1OA, batch_size * input_size_fc, 0, 0.1));
+		// checkCURAND(curandGenerateNormal(curandgen, conv1OA, batch_size * input_size_fc, 0, 0.1));
 
 		// h_W1 = (float *)malloc(input_size_fc * hidden_size * sizeof(float));
 		// h_W2 = (float *)malloc(hidden_size * output_size * sizeof(float));
@@ -940,9 +974,9 @@ public:
 };
 
 int main() {
-	vector<vector<uchar> > train_images, test_images;
-	vector<uchar> train_labels, test_labels;
-	readMNIST(train_images, test_images, train_labels, test_labels);
+	// vector<vector<uchar> > train_images, test_images;
+	// vector<uchar> train_labels, test_labels;
+	// readMNIST(train_images, test_images, train_labels, test_labels);
 	float *f_train_images, *f_train_labels, *f_test_images, *f_test_labels;
 	int input_size = rows * cols * channels;
 	f_train_images = (float *)malloc(N_train * input_size * sizeof(float));
@@ -954,40 +988,40 @@ int main() {
 	// checkCudaErrors(cudaMallocHost((void **)&f_test_images, N_test * input_size * sizeof(float)));
 	// checkCudaErrors(cudaMallocHost((void **)&f_test_labels, N_test * sizeof(float)));
 
-	float *mean_image;
-	mean_image = (float *)malloc(input_size * sizeof(float));
+	// float *mean_image;
+	// mean_image = (float *)malloc(input_size * sizeof(float));
 
-	for (int k = 0; k < N_train; k++) {
-		for (int j = 0; j < rows * cols; j++) {
-			f_train_images[k * input_size + j] = (float)train_images[k][j];
-		}
-		f_train_labels[k] = (float)train_labels[k];
-	}
+	// for (int k = 0; k < N_train; k++) {
+	// 	for (int j = 0; j < rows * cols; j++) {
+	// 		f_train_images[k * input_size + j] = (float)train_images[k][j];
+	// 	}
+	// 	f_train_labels[k] = (float)train_labels[k];
+	// }
 
-	for (int k = 0; k < N_test; k++) {
-		for (int j = 0; j < rows * cols; j++) {
-			f_test_images[k * input_size + j] = (float)test_images[k][j];
-		}
-		f_test_labels[k] = (float)test_labels[k];
-	}
+	// for (int k = 0; k < N_test; k++) {
+	// 	for (int j = 0; j < rows * cols; j++) {
+	// 		f_test_images[k * input_size + j] = (float)test_images[k][j];
+	// 	}
+	// 	f_test_labels[k] = (float)test_labels[k];
+	// }
 
-	for (int i = 0; i < input_size; i++) {
-		mean_image[i] = 0;
-		for (int k = 0; k < N_train; k++) {
-			mean_image[i] += f_train_images[k * input_size + i];
-		}
-		mean_image[i] /= N_train;
-	}
+	// for (int i = 0; i < input_size; i++) {
+	// 	mean_image[i] = 0;
+	// 	for (int k = 0; k < N_train; k++) {
+	// 		mean_image[i] += f_train_images[k * input_size + i];
+	// 	}
+	// 	mean_image[i] /= N_train;
+	// }
 
-	for (int i = 0; i < N_train; i++) {
-		for (int j = 0; j < input_size; j++)
-			f_train_images[i * input_size + j] -= mean_image[j];
-	}
+	// for (int i = 0; i < N_train; i++) {
+	// 	for (int j = 0; j < input_size; j++)
+	// 		f_train_images[i * input_size + j] -= mean_image[j];
+	// }
 
-	for (int i = 0; i < N_test; i++) {
-		for (int j = 0; j < input_size; j++)
-			f_test_images[i * input_size + j] -= mean_image[j];
-	}
+	// for (int i = 0; i < N_test; i++) {
+	// 	for (int j = 0; j < input_size; j++)
+	// 		f_test_images[i * input_size + j] -= mean_image[j];
+	// }
 
 
 	// int toy_input_size = 2;
