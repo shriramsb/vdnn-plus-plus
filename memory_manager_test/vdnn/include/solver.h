@@ -23,4 +23,10 @@ public:
 	void getTrainTime(std::vector<float> &loss, std::vector<float> &time, int num_epoch, 
 						std::vector<std::vector<float> > &fwd_vdnn_lag, std::vector<std::vector<float> > &bwd_vdnn_lag);
 
+	void getComputationTime(long num_epoch, std::vector<std::vector<float> > &fwd_computation_time, std::vector<std::vector<float> > &bwd_computation_time);
+	void stepComputationTime(int start_X, int start_y, std::vector<float> &fwd_computation_time, std::vector<float> &bwd_computation_time);
+
+	void getTransferTime(long num_epoch, std::vector<std::vector<float> > &fwd_transfer_time, std::vector<std::vector<float> > &bwd_transfer_time);
+	void stepTransferTime(int start_X, int start_y, std::vector<float> &fwd_transfer_time, std::vector<float> &bwd_transfer_time);
+
 };

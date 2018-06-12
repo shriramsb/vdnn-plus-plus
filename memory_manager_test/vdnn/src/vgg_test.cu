@@ -107,6 +107,7 @@ void readMNIST(vector<vector<uchar> > &train_images, vector<vector<uchar> > &tes
 
 void printTimes(vector<float> &time, string filename);
 void printvDNNLag(vector<vector<float> > &fwd_vdnn_lag, vector<vector<float> > &bwd_vdnn_lag, string filename);
+void printComputationTransferTimes(vector<vector<float> > &fwd_times, vector<vector<float> >&bwd_times, bool computation, string filename);
 
 int main(int argc, char *argv[]) {
 
@@ -380,9 +381,18 @@ int main(int argc, char *argv[]) {
 	vector<float> loss;
 	vector<float> time;
 	vector<vector<float> > fwd_vdnn_lag, bwd_vdnn_lag;
-	solver.getTrainTime(loss, time, 4, fwd_vdnn_lag, bwd_vdnn_lag);
+	solver.getTrainTime(loss, time, 100, fwd_vdnn_lag, bwd_vdnn_lag);
 	printTimes(time, filename);
 	printvDNNLag(fwd_vdnn_lag, bwd_vdnn_lag, filename);
+
+	vector<vector<float> > fwd_computation_time, bwd_computation_time;
+	solver.getComputationTime(1, fwd_computation_time, bwd_computation_time);
+
+	vector<vector<float> > fwd_transfer_time, bwd_transfer_time;
+	solver.getTransferTime(1, fwd_transfer_time, bwd_transfer_time);
+
+	printComputationTransferTimes(fwd_computation_time, bwd_computation_time, true, filename);
+	printComputationTransferTimes(fwd_transfer_time, bwd_transfer_time, false, filename);
 
 }
 
@@ -441,4 +451,26 @@ void printvDNNLag(vector<vector<float> > &fwd_vdnn_lag, vector<vector<float> > &
 		f << endl;
 	}
 	f.close();
+}
+
+void printComputationTransferTimes(vector<vector<float> > &fwd_times, vector<vector<float> >&bwd_times, bool computation, string filename) {
+	if (computation)
+		filename.append("_compute_time.dat");
+	else
+		filename.append("_transfer_time.dat");
+
+	fstream f;
+	f.open(filename.c_str(), ios_base::out);
+
+	int N = fwd_times.size();
+	for (int i = 0; i < N; i++) {
+		for (int j = 0; j < fwd_times[i].size(); j++) {
+			f << "fwd" << j << ": " << fwd_times[i][j] << endl;
+		}
+		for (int j = 0; j < bwd_times[i].size(); j++) {
+			f << "bwd" << j << ": " << bwd_times[i][j] << endl;
+		}
+		f << endl;
+	}
+	f.close();	
 }

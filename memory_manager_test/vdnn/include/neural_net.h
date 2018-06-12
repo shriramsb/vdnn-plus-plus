@@ -77,6 +77,12 @@ public:
 	void vDNNOptimize(size_t &exp_max_consume, size_t &max_consume);
 	void setOffload(OffloadType offload_type);
 	void resetPrefetched();
+
+	// data of time
+	cudaEvent_t start_compute, stop_compute;
+	void getComputationTime(void *X, int *y, double learning_rate, std::vector<float> &fwd_computation_time, std::vector<float> &bwd_computation_time);
+	cudaEvent_t start_transfer, stop_transfer;
+	void getTransferTime(void *X, int *y, double learning_rate, std::vector<float> &fwd_transfer_time, std::vector<float> &bwd_transfer_time);
 };
 
 #endif

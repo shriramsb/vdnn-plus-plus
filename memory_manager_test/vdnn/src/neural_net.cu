@@ -397,6 +397,13 @@ NeuralNet::NeuralNet(std::vector<LayerSpecifier> &layers, DataType data_type, in
 	// 	std::cout << "waiting..\n";
 	// 	std::cin >> n;
 	// }
+
+	// data of time
+	checkCudaErrors(cudaEventCreate(&start_compute));
+	checkCudaErrors(cudaEventCreate(&stop_compute));
+
+	checkCudaErrors(cudaEventCreate(&start_transfer));
+	checkCudaErrors(cudaEventCreate(&stop_transfer));
 }
 
 bool NeuralNet::simulateNeuralNetworkMemory(vDNNConvAlgoPref algo_pref, bool hard, size_t &exp_max_consume, size_t &max_consume) {
@@ -1456,6 +1463,7 @@ void NeuralNet::getLoss(void *X, int *y, double learning_rate, std::vector<float
 
 	// exit(0);
 }
+
 
 int NeuralNet::findPrefetchLayer(int cur_layer) {
 	for (int i = cur_layer - 1; i >= 0; i--) {

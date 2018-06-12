@@ -251,6 +251,21 @@ cnmemStatus_t CNMEM_API cnmemMemGetInfo(size_t *freeMem, size_t *totalMem, cudaS
 cnmemStatus_t CNMEM_API cnmemPrintMemoryState(FILE *file, cudaStream_t stream);
 
 /**
+ * \brief Print a list of nodes to a file with used and free blocks together in ascending order of address. 
+ * 
+ * This function is intended to be used in case of complex scenarios to help understand the 
+ * behaviour of the memory managers/application. It is thread safe.
+ *
+ * \return 
+ * CNMEM_STATUS_SUCCESS,          if everything goes fine,
+ * CNMEM_STATUS_NOT_INITIALIZED,  if the ::cnmemInit function has not been called,
+ * CNMEM_STATUS_INVALID_ARGUMENT, if one of the argument is invalid. For example, used_mem == 0 
+ *                                or free_mem == 0,
+ * CNMEM_STATUS_CUDA_ERROR,       if an error happens in one of the CUDA functions.
+ */
+cnmemStatus_t CNMEM_API cnmemPrintMemoryStateTogether(FILE *file, cudaStream_t stream);
+
+/**
  * \brief Converts a cnmemStatus_t value to a string.
  */
 const char CNMEM_API * cnmemGetErrorString(cnmemStatus_t status);
