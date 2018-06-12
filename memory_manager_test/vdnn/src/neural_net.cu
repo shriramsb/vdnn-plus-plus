@@ -1,5 +1,7 @@
 #include "neural_net.h"
 #include <time.h>
+#include <cstdio>
+#include <string>
 
 template <typename T>
 __global__ void softmaxLossBackProp(int *y, T *SO, T *dSO, int batch_size, int output_size, float eps) {
@@ -358,7 +360,8 @@ NeuralNet::NeuralNet(std::vector<LayerSpecifier> &layers, DataType data_type, in
 	std::cout << "actual_total_consume(MB): " << (init_free_bytes - (free_bytes + 600 * 1024 * 1024 - max_consume)) / (1.0 * 1024 * 1024) << std::endl;
 
 	// ---------------------- vDNN end ------------------------
-
+	// remove later
+	exit(0);
 
 	// ---------------------- vDNN start ----------------------
 
@@ -601,7 +604,38 @@ bool NeuralNet::simulateCNMEMMemory(size_t &max_consume) {
 
 	resetPrefetched();
 
+	std::string cnmem_memory_state_filename;
+	if (vdnn_type == vDNN_ALL) {
+		if (vdnn_conv_algo == vDNN_PERFORMANCE_OPTIMAL) {
+			cnmem_memory_state_filename = "cnmem_all_p.dat";
+		}
+		else if (vdnn_conv_algo == vDNN_MEMORY_OPTIMAL) {
+			cnmem_memory_state_filename = "cnmem_all_m.dat";
+		}
+	}
+	else if (vdnn_type == vDNN_CONV) {
+		if (vdnn_conv_algo == vDNN_PERFORMANCE_OPTIMAL) {
+			cnmem_memory_state_filename = "cnmem_conv_p.dat";
+		}
+		else if (vdnn_conv_algo == vDNN_MEMORY_OPTIMAL) {
+			cnmem_memory_state_filename = "cnmem_conv_m.dat";
+		}
+	}
+	else if (vdnn_type == vDNN_DYN) {
+		cnmem_memory_state_filename = "cnmem_dyn.dat";
+	}
+	else {
+		cnmem_memory_state_filename = "cnmem_unknown.dat";
+	}
+	FILE *cnmem_memory_state_fptr = fopen(cnmem_memory_state_filename.c_str(), "w");
+
+	fprintf(cnmem_memory_state_fptr, "initial state\n");
+	cnmemPrintMemoryStateTogether(cnmem_memory_state_fptr, NULL);
+
 	checkCNMEMRet(cnmemMalloc(&layer_input[0], layer_input_size[0] * data_type_size, NULL));
+
+	fprintf(cnmem_memory_state_fptr, "after alloc. layer_input[%d] - size: %lu\n", 0, layer_input_size[0] * data_type_size);
+	cnmemPrintMemoryStateTogether(cnmem_memory_state_fptr, NULL);
 
 	// forward propagate
 	for (int i = 0; i < num_layers; i++) {
@@ -609,20 +643,34 @@ bool NeuralNet::simulateCNMEMMemory(size_t &max_consume) {
 		void *cur_workspace;
 
 		checkCNMEMRet(cnmemMalloc(&layer_input[i + 1], layer_input_size[i + 1] * data_type_size, NULL));
+
+		fprintf(cnmem_memory_state_fptr, "after alloc. layer_input[%d] - size: %lu\n", i + 1, layer_input_size[i + 1] * data_type_size);
+		cnmemPrintMemoryStateTogether(cnmem_memory_state_fptr, NULL);
+
 		if (layer_type[i] == CONV) {
 			// std::cout << "conv\n";
 			ConvLayerParams *cur_params = (ConvLayerParams *)params[i];
 
 			cur_workspace_size = cur_params->fwd_workspace_size;
-			checkCNMEMRet(cnmemMalloc(&cur_workspace, cur_workspace_size, NULL));			
+			checkCNMEMRet(cnmemMalloc(&cur_workspace, cur_workspace_size, NULL));
+
+			fprintf(cnmem_memory_state_fptr, "after alloc. conv. workspace - size: %lu\n", cur_workspace_size);
+			cnmemPrintMemoryStateTogether(cnmem_memory_state_fptr, NULL);
+
 		}		
 		
 		if (layer_type[i] == CONV) {
 			checkCNMEMRet(cnmemFree(cur_workspace, NULL));
+
+			fprintf(cnmem_memory_state_fptr, "after free conv. workspace - size: %lu\n", cur_workspace_size);
+			cnmemPrintMemoryStateTogether(cnmem_memory_state_fptr, NULL);
 		}
 
 		if (to_offload[i]) {
 			checkCNMEMRet(cnmemFree(layer_input[i], NULL));
+			
+			fprintf(cnmem_memory_state_fptr, "after free layer_input[%d] - size: %lu\n", i, layer_input_size[i] * data_type_size);
+			cnmemPrintMemoryStateTogether(cnmem_memory_state_fptr, NULL);
 		}
 
 		if (layer_type[i + 1] == ACTV or layer_type[i + 1] == SOFTMAX) {
@@ -631,6 +679,9 @@ bool NeuralNet::simulateCNMEMMemory(size_t &max_consume) {
 	}
 
 	checkCNMEMRet(cnmemMalloc(&dlayer_input[num_layers], batch_size * num_classes * data_type_size, NULL));
+
+	fprintf(cnmem_memory_state_fptr, "after alloc. dlayer_input[%d] - size: %lu\n", num_layers, layer_input_size[num_layers] * data_type_size);
+	cnmemPrintMemoryStateTogether(cnmem_memory_state_fptr, NULL);
 
 	for (int i = num_layers - 1; i >= 0; i--) {
 		// ---------------------- vDNN start ----------------------
@@ -645,8 +696,15 @@ bool NeuralNet::simulateCNMEMMemory(size_t &max_consume) {
 				int layer_to_prefetch = findPrefetchLayer(i);
 				if (layer_to_prefetch != -1) {
 					checkCNMEMRet(cnmemMalloc(&layer_input[layer_to_prefetch], layer_input_size[layer_to_prefetch] * data_type_size, NULL));
+
+					fprintf(cnmem_memory_state_fptr, "after alloc. prefetch layer_input[%d] - size: %lu\n", layer_to_prefetch, layer_input_size[layer_to_prefetch] * data_type_size);
+					cnmemPrintMemoryStateTogether(cnmem_memory_state_fptr, NULL);
+
 				}
 				checkCNMEMRet(cnmemMalloc(&dlayer_input[i], layer_input_size[i] * data_type_size, NULL));
+
+				fprintf(cnmem_memory_state_fptr, "after alloc. dlayer_input[%d] - size: %lu\n", i, layer_input_size[i] * data_type_size);
+				cnmemPrintMemoryStateTogether(cnmem_memory_state_fptr, NULL);
 			}
 		}
 
@@ -658,6 +716,9 @@ bool NeuralNet::simulateCNMEMMemory(size_t &max_consume) {
 			if (!pre_alloc_conv_derivative) {
 				if (!cur_params->cnmemAllocDerivativesCheck(data_type_size, NULL))
 					return false;
+
+				fprintf(cnmem_memory_state_fptr, "after alloc. dP - size: %lu\n", (long unsigned)0);
+				cnmemPrintMemoryStateTogether(cnmem_memory_state_fptr, NULL);
 			}
 
 			cur_filter_workspace_size = cur_params->bwd_filter_workspace_size;
@@ -667,6 +728,10 @@ bool NeuralNet::simulateCNMEMMemory(size_t &max_consume) {
 				cur_data_workspace_size = 0;
 			cur_workspace_size = (cur_filter_workspace_size > cur_data_workspace_size) ? cur_filter_workspace_size : cur_data_workspace_size;
 			checkCNMEMRet(cnmemMalloc(&cur_workspace, cur_workspace_size, NULL));
+
+			fprintf(cnmem_memory_state_fptr, "after alloc. conv. workspace - size: %lu\n", cur_workspace_size);
+			cnmemPrintMemoryStateTogether(cnmem_memory_state_fptr, NULL);
+
 		}
 
 		else if (layer_type[i] == FULLY_CONNECTED) {
@@ -675,6 +740,9 @@ bool NeuralNet::simulateCNMEMMemory(size_t &max_consume) {
 			if (!pre_alloc_fc_derivative) {
 				if (!cur_params->cnmemAllocDerivativesCheck(data_type_size, NULL))
 					return false;
+
+				fprintf(cnmem_memory_state_fptr, "after alloc. dP - size: %lu\n", (long unsigned)0);
+				cnmemPrintMemoryStateTogether(cnmem_memory_state_fptr, NULL);
 			}
 		}
 
@@ -684,6 +752,9 @@ bool NeuralNet::simulateCNMEMMemory(size_t &max_consume) {
 			if (!pre_alloc_batch_norm_derivative) {
 				if (!cur_params->cnmemAllocDerivativesCheck(data_type_size, NULL))
 					return false;
+
+				fprintf(cnmem_memory_state_fptr, "after alloc. dP - size: %lu\n", (long unsigned)0);
+				cnmemPrintMemoryStateTogether(cnmem_memory_state_fptr, NULL);
 			}
 		}
 
@@ -695,32 +766,48 @@ bool NeuralNet::simulateCNMEMMemory(size_t &max_consume) {
 
 		if (layer_type[i] == CONV) {
 			checkCNMEMRet(cnmemFree(cur_workspace, NULL));
+			fprintf(cnmem_memory_state_fptr, "after free conv. workspace - size: %lu\n", cur_workspace_size);
+			cnmemPrintMemoryStateTogether(cnmem_memory_state_fptr, NULL);
+
 			if (!pre_alloc_conv_derivative) {
 				ConvLayerParams *cur_params = (ConvLayerParams *)params[i];
 				cur_params->cnmemFreeDerivatives(NULL);
+				fprintf(cnmem_memory_state_fptr, "after free dP - size: %lu\n", (long unsigned)0);
+				cnmemPrintMemoryStateTogether(cnmem_memory_state_fptr, NULL);
 			}
 		}
 		else if (layer_type[i] == FULLY_CONNECTED) {
 			if (!pre_alloc_fc_derivative) {
 				FCLayerParams *cur_params = (FCLayerParams *)params[i];
 				cur_params->cnmemFreeDerivatives(NULL);
+				fprintf(cnmem_memory_state_fptr, "after free dP - size: %lu\n", (long unsigned)0);
+				cnmemPrintMemoryStateTogether(cnmem_memory_state_fptr, NULL);
 			}
 		}
 		else if (layer_type[i] == BATCHNORM) {
 			if (!pre_alloc_batch_norm_derivative) {
 				BatchNormLayerParams *cur_params = (BatchNormLayerParams *)params[i];
 				cur_params->cnmemFreeDerivatives(NULL);
+				fprintf(cnmem_memory_state_fptr, "after free dP - size: %lu\n", (long unsigned)0);
+				cnmemPrintMemoryStateTogether(cnmem_memory_state_fptr, NULL);
 			}
 		}
 
 		checkCNMEMRet(cnmemFree(layer_input[i + 1], NULL));
+		fprintf(cnmem_memory_state_fptr, "after free layer_input[%d] - size: %lu\n", i + 1, layer_input_size[i + 1] * data_type_size);
+		cnmemPrintMemoryStateTogether(cnmem_memory_state_fptr, NULL);
 		checkCNMEMRet(cnmemFree(dlayer_input[i + 1], NULL));
+		fprintf(cnmem_memory_state_fptr, "after free dlayer_input[%d] - size: %lu\n", i + 1, layer_input_size[i + 1] * data_type_size);
+		cnmemPrintMemoryStateTogether(cnmem_memory_state_fptr, NULL);
 		if (i == 0) {
 			checkCNMEMRet(cnmemFree(layer_input[i], NULL));
+			fprintf(cnmem_memory_state_fptr, "after free layer_input[%d] - size: %lu\n", i, layer_input_size[i] * data_type_size);
+			cnmemPrintMemoryStateTogether(cnmem_memory_state_fptr, NULL);
 		}	
 	}
 	size_t temp;
 	checkCNMEM(cnmemMemGetInfo(&temp, &max_consume, NULL));
+	fclose(cnmem_memory_state_fptr);
 	return true;
 }
 

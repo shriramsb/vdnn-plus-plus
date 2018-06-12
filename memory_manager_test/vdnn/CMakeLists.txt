@@ -1,8 +1,8 @@
 cmake_minimum_required(VERSION 2.8)
 project( vDNNNeuralNet )
-include_directories( include /usr/include /usr/local/cuda/include /usr/include/x86_64-linux-gnu /usr/local/cuda/samples/common/inc cnmem/include )
+include_directories( include /usr/include /usr/local/cuda/include /usr/include/x86_64-linux-gnu /usr/local/cuda/samples/common/inc)
 
-link_directories( /usr/local/cuda/lib64/ cnmem/build )
+link_directories( /usr/local/cuda/lib64/ )
 
 find_package(CUDA)
 

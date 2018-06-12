@@ -48,6 +48,7 @@
 #endif
 
 #define CNMEM_GRANULARITY 512
+#define CUDA_GRANULARITY 128 * 1024
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -562,13 +563,14 @@ cnmemStatus_t Manager::allocateBlockUnsafe(Block *&curr, Block *&prev, std::size
 			}
 			// test run - need to change if cudaMalloc actually returns discontinuous address
 			std::size_t extra_size = size - last->getSize();
+			extra_size = cnmem::ceilInt(extra_size, CUDA_GRANULARITY);
 
 			CNMEM_DEBUG_INFO("cudaMalloc(%lu)\n", extra_size);
 			CNMEM_CHECK_CUDA(cudaMalloc(&data, extra_size));
 			CNMEM_DEBUG_INFO(">> returned address=0x%016lx\n", (size_t) data);
 			addCudaBlockUnsafe(data, extra_size);
 			if ( last->getData() + last->getSize() == (char *)data ) {
-				last->setSize(size);
+				last->setSize(last->getSize() + extra_size);
 				curr = last;
 				prev = last_prev;
 				return CNMEM_STATUS_SUCCESS;
@@ -583,6 +585,7 @@ cnmemStatus_t Manager::allocateBlockUnsafe(Block *&curr, Block *&prev, std::size
 
 		}
 		// if last == NULL or cudaMalloc cannot be merged
+		size = cnmem::ceilInt(size, CUDA_GRANULARITY);
 		CNMEM_DEBUG_INFO("cudaMalloc(%lu)\n", size);
 		CNMEM_CHECK_CUDA(cudaMalloc(&data, size));
 		CNMEM_DEBUG_INFO(">> returned address=0x%016lx\n", (size_t) data);
@@ -867,15 +870,16 @@ cnmemStatus_t Manager::printMemoryStateTogether(FILE *file) const {
 	CNMEM_CHECK_OR_UNLOCK(getFreeMemoryUnsafe(freeMemory), mMutex);
 
 #ifdef CNMEM_BUILD_WITH_32_BIT_POINTERS
-	fprintf(file, ">> [%s] device=%d, stream=0x%08x, used=%uB, free=%uB\n", 
+	fprintf(file, ">> [%s] device=%d, stream=0x%08x, used=%uB, free=%uB, total=%uB\n", 
 #else
-	fprintf(file, ">> [%s] device=%d, stream=0x%016lx, used=%luB, free=%luB\n", 
+	fprintf(file, ">> [%s] device=%d, stream=0x%016lx, used=%luB, free=%luB, total=%luB\n", 
 #endif
 			mParent ? "child" : "root",
 			mDevice, 
 			streamCode,
 			usedMemory,
-			freeMemory);
+			freeMemory,
+			usedMemory + freeMemory);
 	CNMEM_CHECK_OR_UNLOCK(printBothListsUnsafe(file, mUsedBlocks, mFreeBlocks), mMutex);
 	fprintf(file, "\n");
 	CNMEM_CHECK(mMutex.unlock());
