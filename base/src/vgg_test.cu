@@ -10,7 +10,7 @@ using namespace std;
 
 typedef unsigned char uchar;
 
-int num_train = 42*4 + 1, num_test = 500;
+int num_train = 128, num_test = 500;
 
 int reverseInt(int n) {
 	int bytes = 4;
@@ -478,7 +478,7 @@ int main(int argc, char *argv[]) {
 		}
 	}
 
-	int batch_size = 42;
+	int batch_size = 64;
 	long long dropout_seed = 1;
 	float softmax_eps = 1e-8;
 	float init_std_dev = 0.1;
@@ -492,7 +492,7 @@ int main(int argc, char *argv[]) {
 	Solver solver(&net, (void *)f_train_images, f_train_labels, (void *)f_train_images, f_train_labels, num_epoch, SGD, learning_rate, learning_rate_decay, num_train, num_train);
 	vector<float> loss;
 	vector<float> time;
-	solver.getTrainTime(loss, time, 40);
+	solver.getTrainTime(loss, time, 4);
 	printTimes(time, filename);
 
 }

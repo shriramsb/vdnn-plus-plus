@@ -10,7 +10,7 @@ using namespace std;
 
 typedef unsigned char uchar;
 
-int num_train = 1024+1, num_test = 500;
+int num_train = 512, num_test = 500;
 
 int reverseInt(int n) {
 	int bytes = 4;
@@ -403,7 +403,7 @@ int main(int argc, char *argv[]) {
 		}
 	}
 
-	int batch_size = 512;
+	int batch_size = 256;
 	long long dropout_seed = 1;
 	float softmax_eps = 1e-8;
 	float init_std_dev = 0.1;
