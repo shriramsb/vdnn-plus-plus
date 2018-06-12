@@ -4,3 +4,9 @@ CMakeCache.txt
 *.out
 *.dat*
 cmake_install.cmake
+.vscode
+
+things_to_do.txt
+
+final_experiments/
+report/
