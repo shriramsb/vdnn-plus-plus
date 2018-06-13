@@ -81,9 +81,6 @@
 			flag = true;																		\
 			size_t largest_free_block_size = 0;													\
 			cnmemGetLargestFreeBlockSize(largest_free_block_size, NULL);						\
-			std::cout << "req_size: " << req_size << std::endl;									\
-			std::cout << "max_consume: " << max_consume << std::endl;							\
-			std::cout << "largest_free_block_size: " << largest_free_block_size << std::endl;	\
 			max_consume = req_size - largest_free_block_size + max_consume;						\
 			max_consume = (max_consume > free_bytes) ? free_bytes : max_consume;				\
 			action;																				\

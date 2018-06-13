@@ -105,7 +105,7 @@ NeuralNet::NeuralNet(std::vector<LayerSpecifier> &layers, DataType data_type, in
 	checkCURAND(curandSetStream(curand_gen, stream_compute));
 
 	checkCudaErrors(cudaMemGetInfo(&free_bytes, &total_bytes));
-	size_t init_free_bytes = free_bytes;
+	init_free_bytes = free_bytes;
 	std::cout << "Free bytes at start: " << free_bytes << std::endl;
 
 	pre_alloc_conv_derivative = false;
@@ -348,16 +348,15 @@ NeuralNet::NeuralNet(std::vector<LayerSpecifier> &layers, DataType data_type, in
 
 	// leave 600 MB and use the rest
 	std::cout << "Free bytes: " << free_bytes << std::endl;
-	free_bytes -= 1024 * 1024 * 600;
 	// ---------------------- vDNN start ----------------------
 	size_t exp_max_consume, max_consume;
 	vDNNOptimize(exp_max_consume, max_consume);
 	std::cout << "actual_max_consume: " << max_consume << std::endl;
 	std::cout << "exp_max_consume: " << exp_max_consume << std::endl;
 	std::cout << "diff_max_consume(MB): " << (max_consume - exp_max_consume) / (1.0 * 1024 * 1024) << std::endl;
-	std::cout << "exp_free_bytes(MB): " << (free_bytes + 1024 * 1024 * 600 - exp_max_consume) / (1.0 * 1024 * 1024) << std::endl;
-	std::cout << "exp_total_consume(MB): " << (init_free_bytes - (free_bytes + 600 * 1024 * 1024 - exp_max_consume)) / (1.0 * 1024 * 1024) << std::endl;
-	std::cout << "actual_total_consume(MB): " << (init_free_bytes - (free_bytes + 600 * 1024 * 1024 - max_consume)) / (1.0 * 1024 * 1024) << std::endl;
+	std::cout << "exp_free_bytes(MB): " << (free_bytes - exp_max_consume) / (1.0 * 1024 * 1024) << std::endl;
+	std::cout << "exp_total_consume(MB): " << (init_free_bytes - (free_bytes - exp_max_consume)) / (1.0 * 1024 * 1024) << std::endl;
+	std::cout << "actual_total_consume(MB): " << (init_free_bytes - (free_bytes - max_consume)) / (1.0 * 1024 * 1024) << std::endl;
 
 	// ---------------------- vDNN end ------------------------
 	// remove later
@@ -593,7 +592,7 @@ bool NeuralNet::simulateNeuralNetworkMemory(vDNNConvAlgoPref algo_pref, bool har
 
 bool NeuralNet::simulateCNMEMMemory(size_t &max_consume) {
 
-
+	size_t init_max_consume = max_consume;
 	cnmemDevice_t cnmem_device;
 
 	cnmem_device.device = 0;
@@ -851,6 +850,16 @@ bool NeuralNet::simulateCNMEMMemory(size_t &max_consume) {
 		}
 		break;
 	}
+	if (max_consume < free_bytes) {
+		double exp_size = (init_max_consume + init_free_bytes - free_bytes) / (1.0 * 1024 * 1024);
+		double act_size = (max_consume + init_free_bytes - free_bytes) / (1.0 * 1024 * 1024);
+		fprintf(cnmem_memory_state_fptr, "expected_memory_consume: %f MB\n", exp_size);
+		fprintf(cnmem_memory_state_fptr, "actual_memory_consume: %f MB\n", act_size);
+	}
+	else {
+		fprintf(cnmem_memory_state_fptr, "out of memory\n");
+	}
+
 	fclose(cnmem_memory_state_fptr);
 	if (max_consume < free_bytes)
 		return true;
