@@ -10,7 +10,7 @@ using namespace std;
 
 typedef unsigned char uchar;
 
-int num_train = 128, num_test = 500;
+int num_train = 1000, num_test = 500;
 
 int reverseInt(int n) {
 	int bytes = 4;
@@ -107,7 +107,6 @@ void readMNIST(vector<vector<uchar> > &train_images, vector<vector<uchar> > &tes
 
 void printTimes(vector<float> &time, string filename);
 void printvDNNLag(vector<vector<float> > &fwd_vdnn_lag, vector<vector<float> > &bwd_vdnn_lag, string filename);
-void printComputationTransferTimes(vector<vector<float> > &fwd_times, vector<vector<float> >&bwd_times, bool computation, string filename);
 
 int main(int argc, char *argv[]) {
 
@@ -135,12 +134,10 @@ int main(int argc, char *argv[]) {
 	// float *f_train_images, *f_train_labels, *f_test_images, *f_test_labels;
 	float *f_train_images, *f_test_images;
 	int *f_train_labels, *f_test_labels;
-	int rows = 227, cols = 227, channels = 3;
+	int rows = 156, cols = 156, channels = 3;
 	int input_size = rows * cols * channels;
-	// f_train_images = (float *)malloc(num_train * input_size * sizeof(float));
-	// f_train_labels = (int *)malloc(num_train * sizeof(int));
-	checkCudaErrors(cudaMallocHost(&f_train_images, num_train * input_size * sizeof(float)));
-	checkCudaErrors(cudaMallocHost(&f_train_labels, num_train * sizeof(int)));
+	f_train_images = (float *)malloc(num_train * input_size * sizeof(float));
+	f_train_labels = (int *)malloc(num_train * sizeof(int));
 	f_test_images = (float *)malloc(num_test * input_size * sizeof(float));
 	f_test_labels = (int *)malloc(num_test * sizeof(int));
 
@@ -271,95 +268,39 @@ int main(int argc, char *argv[]) {
 	vector<LayerSpecifier> layer_specifier;
 	{
 		ConvDescriptor layer0;
-		layer0.initializeValues(3, 96, 11, 11, 227, 227, 0, 0, 4, 4, RELU);
+		layer0.initializeValues(3, 32, 1, 1, 156, 156, 0, 0, 1, 1, RELU);
 		LayerSpecifier temp;
 		temp.initPointer(CONV);
 		*((ConvDescriptor *)temp.params) = layer0;
 		layer_specifier.push_back(temp);
 	}
 	{
-		PoolingDescriptor layer1;
-		layer1.initializeValues(96, 3, 3, 55, 55, 0, 0, 2, 2, POOLING_MAX);
-		LayerSpecifier temp;
-		temp.initPointer(POOLING);
-		*((PoolingDescriptor *)temp.params) = layer1;
-		layer_specifier.push_back(temp);
-	}
-	{
-		ConvDescriptor layer2;
-		layer2.initializeValues(96, 256, 5, 5, 27, 27, 2, 2, 1, 1, RELU);
+		ConvDescriptor layer0;
+		layer0.initializeValues(32, 32, 1, 1, 156, 156, 0, 0, 1, 1, RELU);
 		LayerSpecifier temp;
 		temp.initPointer(CONV);
-		*((ConvDescriptor *)temp.params) = layer2;
+		*((ConvDescriptor *)temp.params) = layer0;
 		layer_specifier.push_back(temp);
 	}
 	{
-		PoolingDescriptor layer3;
-		layer3.initializeValues(256, 3, 3, 27, 27, 0, 0, 2, 2, POOLING_MAX);
-		LayerSpecifier temp;
-		temp.initPointer(POOLING);
-		*((PoolingDescriptor *)temp.params) = layer3;
-		layer_specifier.push_back(temp);
-	}
-	{
-		ConvDescriptor layer4;
-		layer4.initializeValues(256, 384, 3, 3, 13, 13, 1, 1, 1, 1, RELU);
+		ConvDescriptor layer0;
+		layer0.initializeValues(32, 3, 1, 1, 156, 156, 0, 0, 1, 1, RELU);
 		LayerSpecifier temp;
 		temp.initPointer(CONV);
-		*((ConvDescriptor *)temp.params) = layer4;
-		layer_specifier.push_back(temp);
-	}
-	{
-		ConvDescriptor layer5;
-		layer5.initializeValues(384, 384, 3, 3, 13, 13, 1, 1, 1, 1, RELU);
-		LayerSpecifier temp;
-		temp.initPointer(CONV);
-		*((ConvDescriptor *)temp.params) = layer5;
-		layer_specifier.push_back(temp);
-	}
-	{
-		ConvDescriptor layer6;
-		layer6.initializeValues(384, 256, 3, 3, 13, 13, 1, 1, 1, 1, RELU);
-		LayerSpecifier temp;
-		temp.initPointer(CONV);
-		*((ConvDescriptor *)temp.params) = layer6;
-		layer_specifier.push_back(temp);
-	}
-	{
-		PoolingDescriptor layer7;
-		layer7.initializeValues(256, 3, 3, 13, 13, 0, 0, 2, 2, POOLING_MAX);
-		LayerSpecifier temp;
-		temp.initPointer(POOLING);
-		*((PoolingDescriptor *)temp.params) = layer7;
+		*((ConvDescriptor *)temp.params) = layer0;
 		layer_specifier.push_back(temp);
 	}
 	{
 		FCDescriptor layer8;
-		layer8.initializeValues(9216, 4096, RELU);
+		layer8.initializeValues(156 * 156 * 3, 10);
 		LayerSpecifier temp;
 		temp.initPointer(FULLY_CONNECTED);
 		*((FCDescriptor *)temp.params) = layer8;
 		layer_specifier.push_back(temp);
 	}
 	{
-		FCDescriptor layer9;
-		layer9.initializeValues(4096, 4096, RELU);
-		LayerSpecifier temp;
-		temp.initPointer(FULLY_CONNECTED);
-		*((FCDescriptor *)temp.params) = layer9;
-		layer_specifier.push_back(temp);
-	}
-	{
-		FCDescriptor layer10;
-		layer10.initializeValues(4096, 1000);
-		LayerSpecifier temp;
-		temp.initPointer(FULLY_CONNECTED);
-		*((FCDescriptor *)temp.params) = layer10;
-		layer_specifier.push_back(temp);
-	}
-	{
 		SoftmaxDescriptor layer11;
-		layer11.initializeValues(SOFTMAX_ACCURATE, SOFTMAX_MODE_INSTANCE, 1000, 1, 1);
+		layer11.initializeValues(SOFTMAX_ACCURATE, SOFTMAX_MODE_INSTANCE, 10, 1, 1);
 		LayerSpecifier temp;
 		temp.initPointer(SOFTMAX);
 		*((SoftmaxDescriptor *)temp.params) = layer11;
@@ -422,15 +363,6 @@ int main(int argc, char *argv[]) {
 	printTimes(time, filename);
 	printvDNNLag(fwd_vdnn_lag, bwd_vdnn_lag, filename);
 
-	vector<vector<float> > fwd_computation_time, bwd_computation_time;
-	solver.getComputationTime(1, fwd_computation_time, bwd_computation_time);
-
-	vector<vector<float> > fwd_transfer_time, bwd_transfer_time;
-	solver.getTransferTime(1, fwd_transfer_time, bwd_transfer_time);
-
-	printComputationTransferTimes(fwd_computation_time, bwd_computation_time, true, filename);
-	printComputationTransferTimes(fwd_transfer_time, bwd_transfer_time, false, filename);
-
 }
 
 void printTimes(vector<float> &time, string filename) {
@@ -445,7 +377,7 @@ void printTimes(vector<float> &time, string filename) {
 		std_dev += pow(time[i] - mean_time, 2);
 	}
 	std_dev /= N;
-	std_dev = pow(std_dev, 0.5);
+	pow(std_dev, 0.5);
 	cout << "Average time: " << mean_time << endl;
 	cout << "Standard deviation: " << std_dev << endl;
 
@@ -459,15 +391,6 @@ void printTimes(vector<float> &time, string filename) {
 	f << "mean_time: " << mean_time << endl;
 	f << "standard_deviation: " << std_dev << endl;
 	f.close();
-
-	filename.append(".bin");
-	fstream f_bin;
-	f_bin.open(filename.c_str(), ios_base::out);
-	f_bin.write((char *)&N, sizeof(N));
-	for (int i = 0; i < N; i++) {
-		f_bin.write((char *)&time[i], sizeof(time[i]));
-	}
-	f_bin.close();
 
 }
 
@@ -488,26 +411,4 @@ void printvDNNLag(vector<vector<float> > &fwd_vdnn_lag, vector<vector<float> > &
 		f << endl;
 	}
 	f.close();
-}
-
-void printComputationTransferTimes(vector<vector<float> > &fwd_times, vector<vector<float> >&bwd_times, bool computation, string filename) {
-	if (computation)
-		filename.append("_compute_time.dat");
-	else
-		filename.append("_transfer_time.dat");
-
-	fstream f;
-	f.open(filename.c_str(), ios_base::out);
-
-	int N = fwd_times.size();
-	for (int i = 0; i < N; i++) {
-		for (int j = 0; j < fwd_times[i].size(); j++) {
-			f << "fwd" << j << ": " << fwd_times[i][j] << endl;
-		}
-		for (int j = 0; j < bwd_times[i].size(); j++) {
-			f << "bwd" << j << ": " << bwd_times[i][j] << endl;
-		}
-		f << endl;
-	}
-	f.close();	
 }

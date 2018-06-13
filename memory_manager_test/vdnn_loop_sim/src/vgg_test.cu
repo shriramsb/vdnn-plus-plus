@@ -111,31 +111,10 @@ void printComputationTransferTimes(vector<vector<float> > &fwd_times, vector<vec
 
 int main(int argc, char *argv[]) {
 
-	// int num_train = 100 * batch_size, num_val = batch_size;
-	// void *X_train = malloc(num_train * input_channels * sizeof(float));
-	// int *y_train = (int *)malloc(num_train * sizeof(int));
-	// void *X_val = malloc(num_val * input_channels * sizeof(float));
-	// int *y_val = (int *)malloc(num_val * sizeof(int));
-	// for (int i = 0; i < num_train; i++) {
-	// 	for (int j = 0; j < input_channels; j++)
-	// 		((float *)X_train)[i * input_channels + j] = (rand() % 1000) * 1.0 / 1000;
-	// 	y_train[i] = 0;
-	// }
-
-	// for (int i = 0; i < num_val; i++) {
-	// 	for (int j = 0; j < input_channels; j++)
-	// 		((float *)X_val)[i * input_channels + j] = (rand() % 1000) * 1.0 / 1000;
-	// 	y_val[i] = rand() % 2;
-	// }
 	
-	// int rows = 28, cols = 28, channels = 1;
-	// vector<vector<uchar> > train_images, test_images;
-	// vector<uchar> train_labels, test_labels;
-	// readMNIST(train_images, test_images, train_labels, test_labels);
-	// float *f_train_images, *f_train_labels, *f_test_images, *f_test_labels;
 	float *f_train_images, *f_test_images;
 	int *f_train_labels, *f_test_labels;
-	int rows = 227, cols = 227, channels = 3;
+	int rows = 224, cols = 224, channels = 3;
 	int input_size = rows * cols * channels;
 	// f_train_images = (float *)malloc(num_train * input_size * sizeof(float));
 	// f_train_labels = (int *)malloc(num_train * sizeof(int));
@@ -169,200 +148,184 @@ int main(int argc, char *argv[]) {
 
 	}
 
-	// int input_channels = rows * cols * channels * 3, hidden_channels1 = 50, hidden_channels2 = 100, output_channels = 10;
-	// vector<LayerSpecifier> layer_specifier;
-	// ConvDescriptor layer0;
-	// LayerSpecifier temp;
-	// layer0.initializeValues(1, 3, 3, 3, rows, cols, 1, 1, 1, 1);
-	// temp.initPointer(CONV);
-	// *((ConvDescriptor *)temp.params) = layer0;
-	// layer_specifier.push_back(temp);
-	// ActivationDescriptor layer0_actv;
-	// layer0_actv.initializeValues(RELU, 3, rows, cols);
-	// temp.initPointer(ACTV);
-	// *((ActivationDescriptor *)temp.params) = layer0_actv;
-	// layer_specifier.push_back(temp);
-
-	// BatchNormDescriptor layer0_bn;
-
-	// for (int i = 0; i < 200; i++) {
-	// 	layer0_bn.initializeValues(BATCHNORM_SPATIAL, 1e-5, 0.1, 3, rows, cols);
-	// 	temp.initPointer(BATCHNORM);
-	// 	*((BatchNormDescriptor *)temp.params) = layer0_bn;
-	// 	layer_specifier.push_back(temp);
-
-	// 	layer0.initializeValues(3, 3, 3, 3, rows, cols, 1, 1, 1, 1);
-	// 	temp.initPointer(CONV);
-	// 	*((ConvDescriptor *)temp.params) = layer0;
-	// 	layer_specifier.push_back(temp);
-	// 	layer0_actv.initializeValues(RELU, 3, rows, cols);
-	// 	temp.initPointer(ACTV);
-	// 	*((ActivationDescriptor *)temp.params) = layer0_actv;
-	// 	layer_specifier.push_back(temp);
-	// }
-
-	// PoolingDescriptor layer0_pool;
-	// layer0_pool.initializeValues(3, 2, 2, rows, cols, 0, 0, 2, 2, POOLING_MAX);
-	// temp.initPointer(POOLING);
-	// *((PoolingDescriptor *)temp.params) = layer0_pool;
-	// layer_specifier.push_back(temp);
-
-	// layer0_bn.initializeValues(BATCHNORM_SPATIAL, 1e-5, 0.1, 3, rows / 2, cols / 2);
-	// temp.initPointer(BATCHNORM);
-	// *((BatchNormDescriptor *)temp.params) = layer0_bn;
-	// layer_specifier.push_back(temp);
-
-	// // DropoutDescriptor layer0_dropout;
-	// // layer0_dropout.initializeValues(0.2, 3, rows / 2, cols / 2);
-	// // temp.initPointer(DROPOUT);
-	// // *((DropoutDescriptor *)temp.params) = layer0_dropout;
-	// // layer_specifier.push_back(temp);
-
-	// layer0.initializeValues(3, 3, 3, 3, rows / 2, cols / 2, 1, 1, 1, 1);
-	// temp.initPointer(CONV);
-	// *((ConvDescriptor *)temp.params) = layer0;
-	// layer_specifier.push_back(temp);
-	// layer0_actv.initializeValues(RELU, 3, rows / 2, cols / 2);
-	// temp.initPointer(ACTV);
-	// *((ActivationDescriptor *)temp.params) = layer0_actv;
-	// layer_specifier.push_back(temp);
-
-	// layer0_bn.initializeValues(BATCHNORM_SPATIAL, 1e-5, 0.1, 3, rows / 2, cols / 2);
-	// temp.initPointer(BATCHNORM);
-	// *((BatchNormDescriptor *)temp.params) = layer0_bn;
-	// layer_specifier.push_back(temp);
-
-	// FCDescriptor layer1;
-	// layer1.initializeValues(input_channels, hidden_channels1);
-	// temp.initPointer(FULLY_CONNECTED);
-	// *((FCDescriptor *)(temp.params)) = layer1;
-	// layer_specifier.push_back(temp);
-
-	// temp.initPointer(ACTV);
-	// ActivationDescriptor layer1_actv;
-	// layer1_actv.initializeValues(RELU, hidden_channels1, 1, 1);
-	// *((ActivationDescriptor *)temp.params) = layer1_actv;
-	// layer_specifier.push_back(temp);
-
-	// layer0_bn.initializeValues(BATCHNORM_PER_ACTIVATION, 1e-5, 0.1, hidden_channels1, 1, 1);
-	// temp.initPointer(BATCHNORM);
-	// *((BatchNormDescriptor *)temp.params) = layer0_bn;
-	// layer_specifier.push_back(temp);
-
-	// temp.initPointer(FULLY_CONNECTED);
-	// FCDescriptor layer2;
-	// layer2.initializeValues(hidden_channels1, output_channels);
-	// *((FCDescriptor *)temp.params) = layer2;
-	// layer_specifier.push_back(temp);
-
-	// // temp.initPointer(FULLY_CONNECTED);
-	// // FCDescriptor layer3;
-	// // layer3.initializeValues(hidden_channels2, output_channels);
-	// // *((FCDescriptor *)temp.params) = layer3;
-	// // layer_specifier.push_back(temp);
-
-	// temp.initPointer(SOFTMAX);
-	// SoftmaxDescriptor smax;
-	// smax.initializeValues(SOFTMAX_ACCURATE, SOFTMAX_MODE_INSTANCE, output_channels, 1, 1);
-	// *((SoftmaxDescriptor *)(temp.params)) = smax;
-	// layer_specifier.push_back(temp);
 	
-	// AlexNet
+	// VGG
 	vector<LayerSpecifier> layer_specifier;
 	{
-		ConvDescriptor layer0;
-		layer0.initializeValues(3, 96, 11, 11, 227, 227, 0, 0, 4, 4, RELU);
+		ConvDescriptor part0_conv0;
+		part0_conv0.initializeValues(3, 64, 3, 3, 224, 224, 1, 1, 1, 1, RELU);
 		LayerSpecifier temp;
 		temp.initPointer(CONV);
-		*((ConvDescriptor *)temp.params) = layer0;
+		*((ConvDescriptor *)temp.params) = part0_conv0;
 		layer_specifier.push_back(temp);
 	}
 	{
-		PoolingDescriptor layer1;
-		layer1.initializeValues(96, 3, 3, 55, 55, 0, 0, 2, 2, POOLING_MAX);
+		ConvDescriptor part0_conv1;
+		part0_conv1.initializeValues(64, 64, 3, 3, 224, 224, 1, 1, 1, 1, RELU);
+		LayerSpecifier temp;
+		temp.initPointer(CONV);
+		*((ConvDescriptor *)temp.params) = part0_conv1;
+		layer_specifier.push_back(temp);
+	}
+	{
+		PoolingDescriptor pool0;
+		pool0.initializeValues(64, 2, 2, 224, 224, 0, 0, 2, 2, POOLING_MAX);
 		LayerSpecifier temp;
 		temp.initPointer(POOLING);
-		*((PoolingDescriptor *)temp.params) = layer1;
+		*((PoolingDescriptor *)temp.params) = pool0;
 		layer_specifier.push_back(temp);
 	}
 	{
-		ConvDescriptor layer2;
-		layer2.initializeValues(96, 256, 5, 5, 27, 27, 2, 2, 1, 1, RELU);
+		ConvDescriptor part1_conv0;
+		part1_conv0.initializeValues(64, 128, 3, 3, 112, 112, 1, 1, 1, 1, RELU);
 		LayerSpecifier temp;
 		temp.initPointer(CONV);
-		*((ConvDescriptor *)temp.params) = layer2;
+		*((ConvDescriptor *)temp.params) = part1_conv0;
 		layer_specifier.push_back(temp);
 	}
 	{
-		PoolingDescriptor layer3;
-		layer3.initializeValues(256, 3, 3, 27, 27, 0, 0, 2, 2, POOLING_MAX);
+		ConvDescriptor part1_conv1;
+		part1_conv1.initializeValues(128, 128, 3, 3, 112, 112, 1, 1, 1, 1, RELU);
+		LayerSpecifier temp;
+		temp.initPointer(CONV);
+		*((ConvDescriptor *)temp.params) = part1_conv1;
+		layer_specifier.push_back(temp);
+	}
+	{
+		PoolingDescriptor pool1;
+		pool1.initializeValues(128, 2, 2, 112, 112, 0, 0, 2, 2, POOLING_MAX);
 		LayerSpecifier temp;
 		temp.initPointer(POOLING);
-		*((PoolingDescriptor *)temp.params) = layer3;
+		*((PoolingDescriptor *)temp.params) = pool1;
 		layer_specifier.push_back(temp);
 	}
 	{
-		ConvDescriptor layer4;
-		layer4.initializeValues(256, 384, 3, 3, 13, 13, 1, 1, 1, 1, RELU);
+		ConvDescriptor part2_conv0;
+		part2_conv0.initializeValues(128, 256, 3, 3, 56, 56, 1, 1, 1, 1, RELU);
 		LayerSpecifier temp;
 		temp.initPointer(CONV);
-		*((ConvDescriptor *)temp.params) = layer4;
+		*((ConvDescriptor *)temp.params) = part2_conv0;
 		layer_specifier.push_back(temp);
 	}
 	{
-		ConvDescriptor layer5;
-		layer5.initializeValues(384, 384, 3, 3, 13, 13, 1, 1, 1, 1, RELU);
+		ConvDescriptor part2_conv1;
+		part2_conv1.initializeValues(256, 256, 3, 3, 56, 56, 1, 1, 1, 1, RELU);
 		LayerSpecifier temp;
 		temp.initPointer(CONV);
-		*((ConvDescriptor *)temp.params) = layer5;
+		*((ConvDescriptor *)temp.params) = part2_conv1;
 		layer_specifier.push_back(temp);
 	}
 	{
-		ConvDescriptor layer6;
-		layer6.initializeValues(384, 256, 3, 3, 13, 13, 1, 1, 1, 1, RELU);
+		ConvDescriptor part2_conv2;
+		part2_conv2.initializeValues(256, 256, 3, 3, 56, 56, 1, 1, 1, 1, RELU);
 		LayerSpecifier temp;
 		temp.initPointer(CONV);
-		*((ConvDescriptor *)temp.params) = layer6;
+		*((ConvDescriptor *)temp.params) = part2_conv2;
 		layer_specifier.push_back(temp);
 	}
 	{
-		PoolingDescriptor layer7;
-		layer7.initializeValues(256, 3, 3, 13, 13, 0, 0, 2, 2, POOLING_MAX);
+		PoolingDescriptor pool2;
+		pool2.initializeValues(256, 2, 2, 56, 56, 0, 0, 2, 2, POOLING_MAX);
 		LayerSpecifier temp;
 		temp.initPointer(POOLING);
-		*((PoolingDescriptor *)temp.params) = layer7;
+		*((PoolingDescriptor *)temp.params) = pool2;
 		layer_specifier.push_back(temp);
 	}
 	{
-		FCDescriptor layer8;
-		layer8.initializeValues(9216, 4096, RELU);
+		ConvDescriptor part3_conv0;
+		part3_conv0.initializeValues(256, 512, 3, 3, 28, 28, 1, 1, 1, 1, RELU);
+		LayerSpecifier temp;
+		temp.initPointer(CONV);
+		*((ConvDescriptor *)temp.params) = part3_conv0;
+		layer_specifier.push_back(temp);
+	}
+	{
+		ConvDescriptor part3_conv1;
+		part3_conv1.initializeValues(512, 512, 3, 3, 28, 28, 1, 1, 1, 1, RELU);
+		LayerSpecifier temp;
+		temp.initPointer(CONV);
+		*((ConvDescriptor *)temp.params) = part3_conv1;
+		layer_specifier.push_back(temp);
+	}
+	{
+		ConvDescriptor part3_conv2;
+		part3_conv2.initializeValues(512, 512, 3, 3, 28, 28, 1, 1, 1, 1, RELU);
+		LayerSpecifier temp;
+		temp.initPointer(CONV);
+		*((ConvDescriptor *)temp.params) = part3_conv2;
+		layer_specifier.push_back(temp);
+	}
+	{
+		PoolingDescriptor pool3;
+		pool3.initializeValues(512, 2, 2, 28, 28, 0, 0, 2, 2, POOLING_MAX);
+		LayerSpecifier temp;
+		temp.initPointer(POOLING);
+		*((PoolingDescriptor *)temp.params) = pool3;
+		layer_specifier.push_back(temp);
+	}
+	{
+		ConvDescriptor part4_conv0;
+		part4_conv0.initializeValues(512, 512, 3, 3, 14, 14, 1, 1, 1, 1, RELU);
+		LayerSpecifier temp;
+		temp.initPointer(CONV);
+		*((ConvDescriptor *)temp.params) = part4_conv0;
+		layer_specifier.push_back(temp);
+	}
+	{
+		ConvDescriptor part4_conv1;
+		part4_conv1.initializeValues(512, 512, 3, 3, 14, 14, 1, 1, 1, 1, RELU);
+		LayerSpecifier temp;
+		temp.initPointer(CONV);
+		*((ConvDescriptor *)temp.params) = part4_conv1;
+		layer_specifier.push_back(temp);
+	}
+	{
+		ConvDescriptor part4_conv2;
+		part4_conv2.initializeValues(512, 512, 3, 3, 14, 14, 1, 1, 1, 1, RELU);
+		LayerSpecifier temp;
+		temp.initPointer(CONV);
+		*((ConvDescriptor *)temp.params) = part4_conv2;
+		layer_specifier.push_back(temp);
+	}
+	{
+		PoolingDescriptor pool3;
+		pool3.initializeValues(512, 2, 2, 14, 14, 0, 0, 2, 2, POOLING_MAX);
+		LayerSpecifier temp;
+		temp.initPointer(POOLING);
+		*((PoolingDescriptor *)temp.params) = pool3;
+		layer_specifier.push_back(temp);
+	}
+	
+	{
+		FCDescriptor part5_fc0;
+		part5_fc0.initializeValues(7 * 7 * 512, 4096, RELU);
 		LayerSpecifier temp;
 		temp.initPointer(FULLY_CONNECTED);
-		*((FCDescriptor *)temp.params) = layer8;
+		*((FCDescriptor *)temp.params) = part5_fc0;
 		layer_specifier.push_back(temp);
 	}
 	{
-		FCDescriptor layer9;
-		layer9.initializeValues(4096, 4096, RELU);
+		FCDescriptor part5_fc1;
+		part5_fc1.initializeValues(4096, 4096, RELU);
 		LayerSpecifier temp;
 		temp.initPointer(FULLY_CONNECTED);
-		*((FCDescriptor *)temp.params) = layer9;
+		*((FCDescriptor *)temp.params) = part5_fc1;
 		layer_specifier.push_back(temp);
 	}
 	{
-		FCDescriptor layer10;
-		layer10.initializeValues(4096, 1000);
+		FCDescriptor part5_fc2;
+		part5_fc2.initializeValues(4096, 1000);
 		LayerSpecifier temp;
 		temp.initPointer(FULLY_CONNECTED);
-		*((FCDescriptor *)temp.params) = layer10;
+		*((FCDescriptor *)temp.params) = part5_fc2;
 		layer_specifier.push_back(temp);
 	}
 	{
-		SoftmaxDescriptor layer11;
-		layer11.initializeValues(SOFTMAX_ACCURATE, SOFTMAX_MODE_INSTANCE, 1000, 1, 1);
+		SoftmaxDescriptor s_max;
+		s_max.initializeValues(SOFTMAX_ACCURATE, SOFTMAX_MODE_INSTANCE, 1000, 1, 1);
 		LayerSpecifier temp;
 		temp.initPointer(SOFTMAX);
-		*((SoftmaxDescriptor *)temp.params) = layer11;
+		*((SoftmaxDescriptor *)temp.params) = s_max;
 		layer_specifier.push_back(temp);
 	}
 
@@ -404,7 +367,7 @@ int main(int argc, char *argv[]) {
 		}
 	}
 
-	int batch_size = 128;
+	int batch_size = 64;
 	long long dropout_seed = 1;
 	float softmax_eps = 1e-8;
 	float init_std_dev = 0.1;

@@ -10,7 +10,7 @@ using namespace std;
 
 typedef unsigned char uchar;
 
-int num_train = 128, num_test = 500;
+int num_train = 1000, num_test = 500;
 
 int reverseInt(int n) {
 	int bytes = 4;
@@ -107,7 +107,6 @@ void readMNIST(vector<vector<uchar> > &train_images, vector<vector<uchar> > &tes
 
 void printTimes(vector<float> &time, string filename);
 void printvDNNLag(vector<vector<float> > &fwd_vdnn_lag, vector<vector<float> > &bwd_vdnn_lag, string filename);
-void printComputationTransferTimes(vector<vector<float> > &fwd_times, vector<vector<float> >&bwd_times, bool computation, string filename);
 
 int main(int argc, char *argv[]) {
 
@@ -137,10 +136,8 @@ int main(int argc, char *argv[]) {
 	int *f_train_labels, *f_test_labels;
 	int rows = 227, cols = 227, channels = 3;
 	int input_size = rows * cols * channels;
-	// f_train_images = (float *)malloc(num_train * input_size * sizeof(float));
-	// f_train_labels = (int *)malloc(num_train * sizeof(int));
-	checkCudaErrors(cudaMallocHost(&f_train_images, num_train * input_size * sizeof(float)));
-	checkCudaErrors(cudaMallocHost(&f_train_labels, num_train * sizeof(int)));
+	f_train_images = (float *)malloc(num_train * input_size * sizeof(float));
+	f_train_labels = (int *)malloc(num_train * sizeof(int));
 	f_test_images = (float *)malloc(num_test * input_size * sizeof(float));
 	f_test_labels = (int *)malloc(num_test * sizeof(int));
 
@@ -271,7 +268,7 @@ int main(int argc, char *argv[]) {
 	vector<LayerSpecifier> layer_specifier;
 	{
 		ConvDescriptor layer0;
-		layer0.initializeValues(3, 96, 11, 11, 227, 227, 0, 0, 4, 4, RELU);
+		layer0.initializeValues(3, 96, 11, 11, 227, 227, 0, 0, 4, 4);
 		LayerSpecifier temp;
 		temp.initPointer(CONV);
 		*((ConvDescriptor *)temp.params) = layer0;
@@ -287,7 +284,7 @@ int main(int argc, char *argv[]) {
 	}
 	{
 		ConvDescriptor layer2;
-		layer2.initializeValues(96, 256, 5, 5, 27, 27, 2, 2, 1, 1, RELU);
+		layer2.initializeValues(96, 256, 5, 5, 27, 27, 2, 2, 1, 1);
 		LayerSpecifier temp;
 		temp.initPointer(CONV);
 		*((ConvDescriptor *)temp.params) = layer2;
@@ -303,7 +300,7 @@ int main(int argc, char *argv[]) {
 	}
 	{
 		ConvDescriptor layer4;
-		layer4.initializeValues(256, 384, 3, 3, 13, 13, 1, 1, 1, 1, RELU);
+		layer4.initializeValues(256, 384, 3, 3, 13, 13, 1, 1, 1, 1);
 		LayerSpecifier temp;
 		temp.initPointer(CONV);
 		*((ConvDescriptor *)temp.params) = layer4;
@@ -311,7 +308,7 @@ int main(int argc, char *argv[]) {
 	}
 	{
 		ConvDescriptor layer5;
-		layer5.initializeValues(384, 384, 3, 3, 13, 13, 1, 1, 1, 1, RELU);
+		layer5.initializeValues(384, 384, 3, 3, 13, 13, 1, 1, 1, 1);
 		LayerSpecifier temp;
 		temp.initPointer(CONV);
 		*((ConvDescriptor *)temp.params) = layer5;
@@ -319,7 +316,7 @@ int main(int argc, char *argv[]) {
 	}
 	{
 		ConvDescriptor layer6;
-		layer6.initializeValues(384, 256, 3, 3, 13, 13, 1, 1, 1, 1, RELU);
+		layer6.initializeValues(384, 256, 3, 3, 13, 13, 1, 1, 1, 1);
 		LayerSpecifier temp;
 		temp.initPointer(CONV);
 		*((ConvDescriptor *)temp.params) = layer6;
@@ -335,7 +332,7 @@ int main(int argc, char *argv[]) {
 	}
 	{
 		FCDescriptor layer8;
-		layer8.initializeValues(9216, 4096, RELU);
+		layer8.initializeValues(9216, 4096);
 		LayerSpecifier temp;
 		temp.initPointer(FULLY_CONNECTED);
 		*((FCDescriptor *)temp.params) = layer8;
@@ -343,7 +340,7 @@ int main(int argc, char *argv[]) {
 	}
 	{
 		FCDescriptor layer9;
-		layer9.initializeValues(4096, 4096, RELU);
+		layer9.initializeValues(4096, 4096);
 		LayerSpecifier temp;
 		temp.initPointer(FULLY_CONNECTED);
 		*((FCDescriptor *)temp.params) = layer9;
@@ -411,7 +408,7 @@ int main(int argc, char *argv[]) {
 	NeuralNet net(layer_specifier, DATA_FLOAT, batch_size, TENSOR_NCHW, dropout_seed, softmax_eps, init_std_dev, vdnn_type, vdnn_conv_algo, SGD);
 
 	int num_epoch = 1000;
-	double learning_rate = 1e-3;
+	double learning_rate = 1e-15;
 	double learning_rate_decay = 0.9;
 	
 	Solver solver(&net, (void *)f_train_images, f_train_labels, (void *)f_train_images, f_train_labels, num_epoch, SGD, learning_rate, learning_rate_decay, num_train, num_train);
@@ -421,15 +418,6 @@ int main(int argc, char *argv[]) {
 	solver.getTrainTime(loss, time, 100, fwd_vdnn_lag, bwd_vdnn_lag);
 	printTimes(time, filename);
 	printvDNNLag(fwd_vdnn_lag, bwd_vdnn_lag, filename);
-
-	vector<vector<float> > fwd_computation_time, bwd_computation_time;
-	solver.getComputationTime(1, fwd_computation_time, bwd_computation_time);
-
-	vector<vector<float> > fwd_transfer_time, bwd_transfer_time;
-	solver.getTransferTime(1, fwd_transfer_time, bwd_transfer_time);
-
-	printComputationTransferTimes(fwd_computation_time, bwd_computation_time, true, filename);
-	printComputationTransferTimes(fwd_transfer_time, bwd_transfer_time, false, filename);
 
 }
 
@@ -445,7 +433,7 @@ void printTimes(vector<float> &time, string filename) {
 		std_dev += pow(time[i] - mean_time, 2);
 	}
 	std_dev /= N;
-	std_dev = pow(std_dev, 0.5);
+	pow(std_dev, 0.5);
 	cout << "Average time: " << mean_time << endl;
 	cout << "Standard deviation: " << std_dev << endl;
 
@@ -459,15 +447,6 @@ void printTimes(vector<float> &time, string filename) {
 	f << "mean_time: " << mean_time << endl;
 	f << "standard_deviation: " << std_dev << endl;
 	f.close();
-
-	filename.append(".bin");
-	fstream f_bin;
-	f_bin.open(filename.c_str(), ios_base::out);
-	f_bin.write((char *)&N, sizeof(N));
-	for (int i = 0; i < N; i++) {
-		f_bin.write((char *)&time[i], sizeof(time[i]));
-	}
-	f_bin.close();
 
 }
 
@@ -488,26 +467,4 @@ void printvDNNLag(vector<vector<float> > &fwd_vdnn_lag, vector<vector<float> > &
 		f << endl;
 	}
 	f.close();
-}
-
-void printComputationTransferTimes(vector<vector<float> > &fwd_times, vector<vector<float> >&bwd_times, bool computation, string filename) {
-	if (computation)
-		filename.append("_compute_time.dat");
-	else
-		filename.append("_transfer_time.dat");
-
-	fstream f;
-	f.open(filename.c_str(), ios_base::out);
-
-	int N = fwd_times.size();
-	for (int i = 0; i < N; i++) {
-		for (int j = 0; j < fwd_times[i].size(); j++) {
-			f << "fwd" << j << ": " << fwd_times[i][j] << endl;
-		}
-		for (int j = 0; j < bwd_times[i].size(); j++) {
-			f << "bwd" << j << ": " << bwd_times[i][j] << endl;
-		}
-		f << endl;
-	}
-	f.close();	
 }
