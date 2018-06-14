@@ -595,6 +595,10 @@ bool NeuralNet::simulateCNMEMMemory(size_t &max_consume) {
 	size_t init_max_consume = max_consume;
 	cnmemDevice_t cnmem_device;
 
+	size_t t;
+	checkCudaErrors(cudaMemGetInfo(&free_bytes, &t));
+	std::cout << "free_bytes: " << free_bytes << std::endl;
+	free_bytes -= 100 * 1024 * 1024;
 	cnmem_device.device = 0;
 	cnmem_device.numStreams = 0;
 	cnmem_device.streams = NULL;
@@ -629,13 +633,16 @@ bool NeuralNet::simulateCNMEMMemory(size_t &max_consume) {
 	bool out_of_memory = false;
 	while (true) {
 		run_count++;
-
+		if (max_consume >= free_bytes)
+			break;
 		out_of_memory = false;
 		cnmem_device.size = max_consume;
+		std::cerr << run_count << ' ' << max_consume << std::endl;
+		if (max_consume > free_bytes)
+			std::cerr << "panic!! max_consume > free_bytes\n";
 		checkCNMEM(cnmemInit(1, &cnmem_device, CNMEM_FLAGS_CANNOT_GROW));
 		
 		resetPrefetched();
-
 		fprintf(cnmem_memory_state_fptr, "//////////////////////////////////////////////////////////////////\n");
 		fprintf(cnmem_memory_state_fptr, "run_count: %lu\n", run_count);
 		fprintf(cnmem_memory_state_fptr, "max_consume: %lu\n", max_consume);
@@ -645,7 +652,7 @@ bool NeuralNet::simulateCNMEMMemory(size_t &max_consume) {
 		cnmemPrintMemoryStateTogether(cnmem_memory_state_fptr, NULL);
 
 		checkCNMEMSim(cnmemMalloc(&layer_input[0], layer_input_size[0] * data_type_size, NULL), 
-						layer_input_size[0] * data_type_size, max_consume, free_bytes, continue, out_of_memory);
+						layer_input_size[0] * data_type_size, max_consume, free_bytes, checkCNMEM(cnmemFinalize()); continue, out_of_memory);
 
 		fprintf(cnmem_memory_state_fptr, "after alloc. layer_input[%d] - size: %lu\n", 0, layer_input_size[0] * data_type_size);
 		cnmemPrintMemoryStateTogether(cnmem_memory_state_fptr, NULL);
@@ -704,7 +711,7 @@ bool NeuralNet::simulateCNMEMMemory(size_t &max_consume) {
 		}
 
 		checkCNMEMSim(cnmemMalloc(&dlayer_input[num_layers], batch_size * num_classes * data_type_size, NULL), 
-						layer_input_size[num_layers] * data_type_size, max_consume, free_bytes, continue, out_of_memory);
+						layer_input_size[num_layers] * data_type_size, max_consume, free_bytes, checkCNMEM(cnmemFinalize()); continue, out_of_memory);
 
 		fprintf(cnmem_memory_state_fptr, "after alloc. dlayer_input[%d] - size: %lu\n", num_layers, layer_input_size[num_layers] * data_type_size);
 		cnmemPrintMemoryStateTogether(cnmem_memory_state_fptr, NULL);
@@ -719,6 +726,7 @@ bool NeuralNet::simulateCNMEMMemory(size_t &max_consume) {
 					dlayer_input[i] = dlayer_input[i + 1];
 				}
 				else {
+
 					int layer_to_prefetch = findPrefetchLayer(i);
 					if (layer_to_prefetch != -1) {
 						checkCNMEMSim(cnmemMalloc(&layer_input[layer_to_prefetch], layer_input_size[layer_to_prefetch] * data_type_size, NULL), 
@@ -728,6 +736,7 @@ bool NeuralNet::simulateCNMEMMemory(size_t &max_consume) {
 						cnmemPrintMemoryStateTogether(cnmem_memory_state_fptr, NULL);
 
 					}
+
 					checkCNMEMSim(cnmemMalloc(&dlayer_input[i], layer_input_size[i] * data_type_size, NULL), 
 									layer_input_size[i] * data_type_size, max_consume, free_bytes, break, out_of_memory);
 
@@ -769,7 +778,7 @@ bool NeuralNet::simulateCNMEMMemory(size_t &max_consume) {
 
 				if (!pre_alloc_fc_derivative) {
 					if (!cur_params->cnmemAllocDerivativesCheck(data_type_size, NULL, max_consume, free_bytes, out_of_memory))
-						return false;
+						break;
 
 					fprintf(cnmem_memory_state_fptr, "after alloc. dW - size: %lu\n", cur_params->weight_matrix_size * data_type_size);
 					fprintf(cnmem_memory_state_fptr, "after alloc. db - size: %lu\n", cur_params->C_out * data_type_size);
@@ -782,7 +791,7 @@ bool NeuralNet::simulateCNMEMMemory(size_t &max_consume) {
 
 				if (!pre_alloc_batch_norm_derivative) {
 					if (!cur_params->cnmemAllocDerivativesCheck(data_type_size, NULL, max_consume, free_bytes, out_of_memory))
-						return false;
+						break;
 
 					fprintf(cnmem_memory_state_fptr, "after alloc. dscale - size: %lu\n", cur_params->allocation_size * data_type_size);
 					fprintf(cnmem_memory_state_fptr, "after alloc. dbias - size: %lu\n", cur_params->allocation_size * data_type_size);
@@ -841,8 +850,8 @@ bool NeuralNet::simulateCNMEMMemory(size_t &max_consume) {
 				cnmemPrintMemoryStateTogether(cnmem_memory_state_fptr, NULL);
 			}	
 		}
+		checkCNMEM(cnmemFinalize());
 		if (out_of_memory) {
-			checkCNMEM(cnmemFinalize());
 			if (max_consume < free_bytes)
 				continue;
 			else
@@ -850,6 +859,7 @@ bool NeuralNet::simulateCNMEMMemory(size_t &max_consume) {
 		}
 		break;
 	}
+	free_bytes += 100 * 1024 * 1024;
 	if (max_consume < free_bytes) {
 		double exp_size = (init_max_consume + init_free_bytes - free_bytes) / (1.0 * 1024 * 1024);
 		double act_size = (max_consume + init_free_bytes - free_bytes) / (1.0 * 1024 * 1024);
