@@ -98,7 +98,7 @@ public:
 
 	// ---------------------- vDNN ext end ------------------------
 
-	enum OffloadType {OFFLOAD_ALL, OFFLOAD_NONE, OFFLOAD_CONV};
+	enum OffloadType {OFFLOAD_ALL, OFFLOAD_NONE, OFFLOAD_CONV, OFFLOAD_ALTERNATE_CONV};
 
 	NeuralNet(std::vector<LayerSpecifier> &layers, DataType data_type, int batch_size, TensorFormat tensor_format, 
 				long long dropout_seed, float softmax_eps, float init_std_dev, vDNNType vdnn_type, vDNNConvAlgo vdnn_conv_algo, 

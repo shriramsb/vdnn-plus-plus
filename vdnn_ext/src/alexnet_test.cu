@@ -383,11 +383,15 @@ int main(int argc, char *argv[]) {
 			vdnn_type = vDNN_ALL;
 			filename.append("_all");
 		}
+		else if (strcmp(argv[1], "alternate_conv") == 0) {
+			vdnn_type = vDNN_ALTERNATE_CONV;
+			filename.append("_alternate_conv");
+		}
 		else {
 			printf("invalid argument.. using vdnn dynamic\n");
 			filename.assign("vdnn_dyn");
 		}
-		if ((strcmp(argv[1], "conv") == 0 or strcmp(argv[1], "all") == 0)) {
+		if ((strcmp(argv[1], "conv") == 0 or strcmp(argv[1], "all") == 0 or strcmp(argv[1], "alternate_conv") == 0)) {
 			if (strcmp(argv[2], "p") == 0) {
 				vdnn_conv_algo = vDNN_PERFORMANCE_OPTIMAL;
 				filename.append("_p");

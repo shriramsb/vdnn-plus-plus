@@ -945,6 +945,19 @@ void NeuralNet::vDNNOptimize(size_t &exp_max_consume, size_t &max_consume) {
 
 		return;	
 	}
+	else if (vdnn_type == vDNN_ALTERNATE_CONV) {
+		setOffload(OFFLOAD_ALTERNATE_CONV);
+		resetPrefetched();
+		if (vdnn_conv_algo == vDNN_PERFORMANCE_OPTIMAL) {
+			if (!simulateNeuralNetworkMemory(PREFER_PERFORMANCE_OPTIMAL, hard, exp_max_consume, max_consume))
+				outOfMemory();
+		}
+		else if (vdnn_conv_algo == vDNN_MEMORY_OPTIMAL) {
+			if (!simulateNeuralNetworkMemory(PREFER_MEMORY_OPTIMAL, hard, exp_max_consume, max_consume))
+				outOfMemory();
+		}
+		return;
+	}
 
 	if (vdnn_type == vDNN_DYN) {
 	
@@ -1051,6 +1064,32 @@ void NeuralNet::setOffload(NeuralNet::OffloadType offload_type) {
 				break;
 			}
 		}
+	}
+	else if (offload_type == OFFLOAD_ALTERNATE_CONV) {
+		for (int i = 0; i < num_layers; i++) {
+			if (layer_type[i] == CONV)
+				to_offload[i] = true;
+			else
+				to_offload[i] = false;
+		}
+		// set last non SOFTMAX/ACTV layer to no_offload
+		for (int i = num_layers - 1; i >= 0; i--) {
+			if (layer_type[i] == SOFTMAX or layer_type[i] == ACTV)
+				;
+			else {
+				to_offload[i] = false;
+				break;
+			}
+		}
+		bool toggle = true;
+		for (int i = 0; i < num_layers; i++) {
+			if (layer_type[i] == CONV) {
+				if (toggle == false)
+					to_offload[i] = false;
+				toggle = !toggle;
+
+			}
+		}	
 	}
 }
 
