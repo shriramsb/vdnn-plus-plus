@@ -861,7 +861,8 @@ void NeuralNet::setOffload(NeuralNet::OffloadType offload_type) {
 	}
 	else if (offload_type == OFFLOAD_ALL) {
 		for (int i = 0; i < num_layers; i++) {
-			if (layer_type[i] == ACTV or layer_type[i] == SOFTMAX)
+			// Only SOFTMAX, CONV, POOL, FULLY_CONNECTED used so far
+			if (layer_type[i] == ACTV or layer_type[i] == SOFTMAX or layer_type[i] == FULLY_CONNECTED)
 				to_offload[i] = false;
 			else
 				to_offload[i] = true;
