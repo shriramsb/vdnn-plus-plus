@@ -73,6 +73,24 @@
 	}                                                        							\
 }
 
+#define checkCNMEMSim(expression, req_size, max_consume, free_bytes, action, flag)              \
+{                                                            									\
+	cnmemStatus_t status = (expression);                     									\
+	if (status != CNMEM_STATUS_SUCCESS) {                    									\
+		if (status == CNMEM_STATUS_OUT_OF_MEMORY) {												\
+			flag = true;																		\
+			size_t largest_free_block_size = 0;													\
+			cnmemGetLargestFreeBlockSize(largest_free_block_size, NULL);						\
+			max_consume = req_size - largest_free_block_size + max_consume;						\
+			max_consume = (max_consume > free_bytes) ? free_bytes : max_consume;				\
+			action;																				\
+		}																						\
+		std::cerr << "Error in file " << __FILE__ << " on line " << __LINE__ << ": " 			\
+		<< cnmemGetErrorString(status) << std::endl; 											\
+			std::exit(EXIT_FAILURE);															\
+	}                                                      										\
+}
+
 #define checkPThreadErrors(expression)													\
 {																						\
 	int status = (expression);															\

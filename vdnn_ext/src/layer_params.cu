@@ -146,9 +146,13 @@ void ConvLayerParams::cnmemAllocDerivatives(size_t data_type_size, cudaStream_t 
 	checkCNMEM(cnmemMalloc(&db, C_out * data_type_size, stream));
 }
 
-bool ConvLayerParams::cnmemAllocDerivativesCheck(size_t data_type_size, cudaStream_t stream) {
-	checkCNMEMRet(cnmemMalloc(&dW, kernel_size * data_type_size, stream));
-	checkCNMEMRet(cnmemMalloc(&db, C_out * data_type_size, stream));
+bool ConvLayerParams::cnmemAllocDerivativesCheck(size_t data_type_size, cudaStream_t stream, 
+													size_t &max_consume, size_t free_bytes, bool &out_of_memory) {
+	checkCNMEMSim(cnmemMalloc(&dW, kernel_size * data_type_size, stream), 
+					kernel_size * data_type_size, max_consume, free_bytes, return false, out_of_memory);
+	checkCNMEMSim(cnmemMalloc(&db, C_out * data_type_size, stream), 
+					C_out * data_type_size, max_consume, free_bytes, return false, out_of_memory);
+
 	return true;
 }
 
@@ -418,9 +422,12 @@ void FCLayerParams::cnmemAllocDerivatives(size_t data_type_size, cudaStream_t st
 	checkCNMEM(cnmemMalloc(&db, C_out * data_type_size, stream));
 }
 
-bool FCLayerParams::cnmemAllocDerivativesCheck(size_t data_type_size, cudaStream_t stream) {
-	checkCNMEMRet(cnmemMalloc(&dW, weight_matrix_size * data_type_size, stream));
-	checkCNMEMRet(cnmemMalloc(&db, C_out * data_type_size, stream));
+bool FCLayerParams::cnmemAllocDerivativesCheck(size_t data_type_size, cudaStream_t stream, 
+												size_t &max_consume, size_t free_bytes, bool &out_of_memory) {
+	checkCNMEMSim(cnmemMalloc(&dW, weight_matrix_size * data_type_size, stream), 
+					weight_matrix_size * data_type_size, max_consume, free_bytes, return false, out_of_memory);
+	checkCNMEMSim(cnmemMalloc(&db, C_out * data_type_size, stream), 
+					C_out * data_type_size, max_consume, free_bytes, return false, out_of_memory);
 	return true;
 }
 
@@ -574,9 +581,12 @@ void BatchNormLayerParams::cnmemAllocDerivatives(size_t data_type_size, cudaStre
 	checkCNMEM(cnmemMalloc(&dbias, allocation_size * data_type_size, stream));
 }
 
-bool BatchNormLayerParams::cnmemAllocDerivativesCheck(size_t data_type_size, cudaStream_t stream) {
-	checkCNMEMRet(cnmemMalloc(&dscale, allocation_size * data_type_size, stream));
-	checkCNMEMRet(cnmemMalloc(&dbias, allocation_size * data_type_size, stream));
+bool BatchNormLayerParams::cnmemAllocDerivativesCheck(size_t data_type_size, cudaStream_t stream, 
+														size_t &max_consume, size_t free_bytes, bool &out_of_memory) {
+	checkCNMEMSim(cnmemMalloc(&dscale, allocation_size * data_type_size, stream), 
+					allocation_size * data_type_size, max_consume, free_bytes, return false, out_of_memory);
+	checkCNMEMSim(cnmemMalloc(&dbias, allocation_size * data_type_size, stream), 
+					allocation_size * data_type_size, max_consume, free_bytes, return false, out_of_memory);
 	return true;
 }
 

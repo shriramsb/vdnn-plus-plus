@@ -48,7 +48,7 @@ public:
 	cudnnTensorFormat_t tensor_format;
 	int batch_size;
 
-	size_t free_bytes, total_bytes;
+	size_t init_free_bytes, free_bytes, total_bytes;
 	size_t workspace_size;
 	void *workspace;
 
