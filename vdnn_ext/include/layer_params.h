@@ -20,6 +20,8 @@ enum workspaceStatus_t {WORKSPACE_STATUS_SUCCESS, WORKSPACE_STATUS_OUT_OF_MEMORY
 	}                                                        							\
 }
 
+class NeuralNet;
+
 struct ConvLayerParams {
 	void *W, *b;
 	void *dW, *db;
@@ -57,9 +59,11 @@ struct ConvLayerParams {
 	workspaceStatus_t getWorkspaceSize(size_t &free_bytes, ConvDirection conv_direction, vDNNConvAlgoPref algo_pref, bool hard_pref, size_t &workspace_size);
 	
 	void cnmemAllocDerivatives(size_t data_type_size, cudaStream_t stream);
+	void cnmemAllocDerivativesLocked(NeuralNet *net, size_t data_type_size, cudaStream_t stream);
 	bool cnmemAllocDerivativesCheck(size_t data_type_size, cudaStream_t stream, size_t &max_consume, size_t free_bytes, bool &out_of_memory);
 	void stepParams(cublasHandle_t cublas_handle, double learning_rate);
 	void cnmemFreeDerivatives(cudaStream_t stream);
+	void cnmemFreeDerivativesLocked(NeuralNet *net, cudaStream_t stream);
 };
 
 struct FCLayerParams {
@@ -79,9 +83,11 @@ struct FCLayerParams {
 						float std_dev, size_t &free_bytes, bool alloc_derivative);
 	
 	void cnmemAllocDerivatives(size_t data_type_size, cudaStream_t stream);
+	void cnmemAllocDerivativesLocked(NeuralNet *net, size_t data_type_size, cudaStream_t stream);
 	bool cnmemAllocDerivativesCheck(size_t data_type_size, cudaStream_t stream, size_t &max_consume, size_t free_bytes, bool &out_of_memory);
 	void stepParams(cublasHandle_t cublas_handle, double learning_rate);
 	void cnmemFreeDerivatives(cudaStream_t stream);
+	void cnmemFreeDerivativesLocked(NeuralNet *net, cudaStream_t stream);
 };
 
 struct DropoutLayerParams {
@@ -118,9 +124,11 @@ struct BatchNormLayerParams {
 	void allocateSpace(cudnnDataType_t data_type, size_t data_type_size, size_t &free_bytes, bool alloc_derivative);
 
 	void cnmemAllocDerivatives(size_t data_type_size, cudaStream_t stream);
+	void cnmemAllocDerivativesLocked(NeuralNet *net, size_t data_type_size, cudaStream_t stream);
 	bool cnmemAllocDerivativesCheck(size_t data_type_size, cudaStream_t stream, size_t &max_consume, size_t free_bytes, bool &out_of_memory);
 	void stepParams(cublasHandle_t cublas_handle, double learning_rate);
 	void cnmemFreeDerivatives(cudaStream_t stream);
+	void cnmemFreeDerivativesLocked(NeuralNet *net, cudaStream_t stream);
 };
 
 struct PoolingLayerParams {
@@ -152,5 +160,7 @@ struct SoftmaxLayerParams {
 							int batch_size, LayerDimension &output_size);
 	void allocateSpace(size_t &free_bytes);
 };
+
+
 
 #endif

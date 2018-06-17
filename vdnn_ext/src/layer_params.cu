@@ -1,4 +1,5 @@
 #include "layer_params.h"
+#include "neural_net.h"
 
 void ConvLayerParams::initializeValues(cudnnHandle_t cudnn_handle, ConvDescriptor *user_params, cudnnDataType_t data_type, 
 									int batch_size, cudnnTensorFormat_t tensor_format, size_t data_type_size, LayerDimension &output_size, 
@@ -146,6 +147,11 @@ void ConvLayerParams::cnmemAllocDerivatives(size_t data_type_size, cudaStream_t 
 	checkCNMEM(cnmemMalloc(&db, C_out * data_type_size, stream));
 }
 
+void ConvLayerParams::cnmemAllocDerivativesLocked(NeuralNet *net, size_t data_type_size, cudaStream_t stream) {
+	net->lockedcnmemMalloc(&dW, kernel_size * data_type_size, stream);
+	net->lockedcnmemMalloc(&db, C_out * data_type_size, stream);
+}
+
 bool ConvLayerParams::cnmemAllocDerivativesCheck(size_t data_type_size, cudaStream_t stream, 
 													size_t &max_consume, size_t free_bytes, bool &out_of_memory) {
 	checkCNMEMSim(cnmemMalloc(&dW, kernel_size * data_type_size, stream), 
@@ -189,6 +195,11 @@ void ConvLayerParams::stepParams(cublasHandle_t cublas_handle, double learning_r
 void ConvLayerParams::cnmemFreeDerivatives(cudaStream_t stream) {
 	checkCNMEM(cnmemFree(dW, stream));
 	checkCNMEM(cnmemFree(db, stream));
+}
+
+void ConvLayerParams::cnmemFreeDerivativesLocked(NeuralNet *net, cudaStream_t stream) {
+	net->lockedcnmemFree(dW, stream);
+	net->lockedcnmemFree(db, stream);
 }
 
 size_t ConvLayerParams::getWorkspaceSize(size_t &free_bytes, ConvLayerParams::ConvDirection conv_direction, vDNNConvAlgo vdnn_conv_algo) {
@@ -422,6 +433,11 @@ void FCLayerParams::cnmemAllocDerivatives(size_t data_type_size, cudaStream_t st
 	checkCNMEM(cnmemMalloc(&db, C_out * data_type_size, stream));
 }
 
+void FCLayerParams::cnmemAllocDerivativesLocked(NeuralNet *net, size_t data_type_size, cudaStream_t stream) {
+	net->lockedcnmemMalloc(&dW, weight_matrix_size * data_type_size, stream);
+	net->lockedcnmemMalloc(&db, C_out * data_type_size, stream);
+}
+
 bool FCLayerParams::cnmemAllocDerivativesCheck(size_t data_type_size, cudaStream_t stream, 
 												size_t &max_consume, size_t free_bytes, bool &out_of_memory) {
 	checkCNMEMSim(cnmemMalloc(&dW, weight_matrix_size * data_type_size, stream), 
@@ -486,6 +502,11 @@ void FCLayerParams::stepParams(cublasHandle_t cublas_handle, double learning_rat
 void FCLayerParams::cnmemFreeDerivatives(cudaStream_t stream) {
 	checkCNMEM(cnmemFree(dW, stream));
 	checkCNMEM(cnmemFree(db, stream));
+}
+
+void FCLayerParams::cnmemFreeDerivativesLocked(NeuralNet *net, cudaStream_t stream) {
+	net->lockedcnmemFree(dW, stream);
+	net->lockedcnmemFree(db, stream);
 }
 
 void DropoutLayerParams::initializeValues(cudnnHandle_t cudnn_handle, DropoutDescriptor *user_params, cudnnDataType_t data_type, int batch_size,
@@ -581,6 +602,11 @@ void BatchNormLayerParams::cnmemAllocDerivatives(size_t data_type_size, cudaStre
 	checkCNMEM(cnmemMalloc(&dbias, allocation_size * data_type_size, stream));
 }
 
+void BatchNormLayerParams::cnmemAllocDerivativesLocked(NeuralNet *net, size_t data_type_size, cudaStream_t stream) {
+	net->lockedcnmemMalloc(&dscale, allocation_size * data_type_size, stream);
+	net->lockedcnmemMalloc(&dbias, allocation_size * data_type_size, stream);
+}
+
 bool BatchNormLayerParams::cnmemAllocDerivativesCheck(size_t data_type_size, cudaStream_t stream, 
 														size_t &max_consume, size_t free_bytes, bool &out_of_memory) {
 	checkCNMEMSim(cnmemMalloc(&dscale, allocation_size * data_type_size, stream), 
@@ -621,6 +647,11 @@ void BatchNormLayerParams::stepParams(cublasHandle_t cublas_handle, double learn
 void BatchNormLayerParams::cnmemFreeDerivatives(cudaStream_t stream) {
 	checkCNMEM(cnmemFree(dscale, stream));
 	checkCNMEM(cnmemFree(dbias, stream));
+}
+
+void BatchNormLayerParams::cnmemFreeDerivativesLocked(NeuralNet *net, cudaStream_t stream) {
+	net->lockedcnmemFree(dscale, stream);
+	net->lockedcnmemFree(dbias, stream);
 }
 
 void PoolingLayerParams::initializeValues(PoolingDescriptor *user_params, cudnnDataType_t data_type, cudnnTensorFormat_t tensor_format, 
