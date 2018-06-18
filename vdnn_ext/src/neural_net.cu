@@ -616,8 +616,6 @@ bool NeuralNet::simulateCNMEMMemory(size_t &max_consume) {
 	size_t init_max_consume = max_consume;
 	cnmemDevice_t cnmem_device;
 
-	size_t t;
-	checkCudaErrors(cudaMemGetInfo(&free_bytes, &t));
 	std::cout << "free_bytes: " << free_bytes << std::endl;
 	free_bytes -= 100 * 1024 * 1024;
 	cnmem_device.device = 0;
@@ -1161,7 +1159,7 @@ void NeuralNet::getLoss(void *X, int *y, double learning_rate, std::vector<float
 	for (int i = 0; i < num_layers; i++)
 		prefetched[i] = false;
 
-	lockedcnmemMalloc(&layer_input[0], layer_input_size[0] * data_type_size, NULL);
+	checkCNMEM(cnmemMalloc(&layer_input[0], layer_input_size[0] * data_type_size, NULL));
 	space_tracker.updateSpace(CnmemSpace::SUB, layer_input_size[0] * data_type_size);
 	checkCudaErrors(cudaMemcpy(layer_input[0], X, batch_size * input_channels * input_h * input_w * data_type_size, cudaMemcpyHostToDevice));
 	if (train == true) {
@@ -1426,7 +1424,7 @@ void NeuralNet::getLoss(void *X, int *y, double learning_rate, std::vector<float
 	*scalar_loss = computeLoss();
 
 	// ---------------------- vDNN start ----------------------
-	lockedcnmemMalloc(&dlayer_input[num_layers], batch_size * num_classes * data_type_size, NULL);
+	checkCNMEM(cnmemMalloc(&dlayer_input[num_layers], batch_size * num_classes * data_type_size, NULL));
 	space_tracker.updateSpace(CnmemSpace::SUB, layer_input_size[num_layers] * data_type_size);
 	// std::cout << "Free bytes: " << free_bytes << std::endl;
 	// ---------------------- vDNN end ------------------------
@@ -1471,7 +1469,7 @@ void NeuralNet::getLoss(void *X, int *y, double learning_rate, std::vector<float
 			else {
 				int layer_to_prefetch = findPrefetchLayer(i);
 				if (layer_to_prefetch != -1) {
-					lockedcnmemMalloc(&layer_input[layer_to_prefetch], layer_input_size[layer_to_prefetch] * data_type_size, NULL);
+					checkCNMEM(cnmemMalloc(&layer_input[layer_to_prefetch], layer_input_size[layer_to_prefetch] * data_type_size, NULL));
 					space_tracker.updateSpace(CnmemSpace::SUB, layer_input_size[layer_to_prefetch] * data_type_size);
 					// std::cout << "Free bytes: " << free_bytes << std::endl;
 					if (layer_to_prefetch != 0) {
@@ -1488,7 +1486,7 @@ void NeuralNet::getLoss(void *X, int *y, double learning_rate, std::vector<float
 					checkPThreadErrors(pthread_create(&thread_flag_prefetch_done[layer_to_prefetch], NULL, NeuralNet::threadFlagPrefetchDoneHelper, (void *)(&(layer_num[layer_to_prefetch]))));
 					checkPThreadErrors(pthread_detach(thread_flag_prefetch_done[layer_to_prefetch]));
 				}
-				lockedcnmemMalloc(&dlayer_input[i], layer_input_size[i] * data_type_size, NULL);
+				checkCNMEM(cnmemMalloc(&dlayer_input[i], layer_input_size[i] * data_type_size, NULL));
 				space_tracker.updateSpace(CnmemSpace::SUB, layer_input_size[i] * data_type_size);
 			}
 			// std::cout << "Free bytes: " << free_bytes << std::endl;
@@ -1510,7 +1508,7 @@ void NeuralNet::getLoss(void *X, int *y, double learning_rate, std::vector<float
 
 			// allocate space for derivative
 			if (!pre_alloc_conv_derivative) {
-				cur_params->cnmemAllocDerivativesLocked(this, data_type_size, NULL);
+				cur_params->cnmemAllocDerivatives(data_type_size, NULL);
 				space_tracker.updateSpace(CnmemSpace::SUB, cur_params->kernel_size * data_type_size);
 				space_tracker.updateSpace(CnmemSpace::SUB, cur_params->C_out * data_type_size);
 			}
@@ -1522,7 +1520,7 @@ void NeuralNet::getLoss(void *X, int *y, double learning_rate, std::vector<float
 				cur_data_workspace_size = 0;
 			// std::cout << "bwd cur_workspace_size: " << cur_workspace_size << std::endl;
 			cur_workspace_size = (cur_filter_workspace_size > cur_data_workspace_size) ? cur_filter_workspace_size : cur_data_workspace_size;
-			lockedcnmemMalloc(&cur_workspace, cur_workspace_size, NULL);
+			checkCNMEM(cnmemMalloc(&cur_workspace, cur_workspace_size, NULL));
 
 			checkCUDNN(cudnnConvolutionBackwardBias(cudnn_handle, &alpha,
 													cur_params->output_tensor, dlayer_input[i + 1],
@@ -1567,7 +1565,7 @@ void NeuralNet::getLoss(void *X, int *y, double learning_rate, std::vector<float
 			}
 
 			if (!pre_alloc_fc_derivative) {
-				cur_params->cnmemAllocDerivativesLocked(this, data_type_size, NULL);
+				cur_params->cnmemAllocDerivatives(data_type_size, NULL);
 				space_tracker.updateSpace(CnmemSpace::SUB, cur_params->weight_matrix_size * data_type_size);
 				space_tracker.updateSpace(CnmemSpace::SUB, cur_params->C_out * data_type_size);
 			}
@@ -1652,7 +1650,7 @@ void NeuralNet::getLoss(void *X, int *y, double learning_rate, std::vector<float
 			BatchNormLayerParams *cur_params = (BatchNormLayerParams *)params[i];
 
 			if (!pre_alloc_batch_norm_derivative) {
-				cur_params->cnmemAllocDerivativesLocked(this, data_type_size, NULL);
+				cur_params->cnmemAllocDerivatives(data_type_size, NULL);
 				space_tracker.updateSpace(CnmemSpace::SUB, cur_params->allocation_size * data_type_size);
 				space_tracker.updateSpace(CnmemSpace::SUB, cur_params->allocation_size * data_type_size);
 			}
@@ -1722,11 +1720,11 @@ void NeuralNet::getLoss(void *X, int *y, double learning_rate, std::vector<float
 		// }
 
 		if (layer_type[i] == CONV) {
-			lockedcnmemFree(cur_workspace, NULL);
+			checkCNMEM(cnmemFree(cur_workspace, NULL));
 			space_tracker.updateSpace(CnmemSpace::ADD, cur_workspace_size);
 			if (!pre_alloc_conv_derivative) {
 				ConvLayerParams *cur_params = (ConvLayerParams *)params[i];
-				cur_params->cnmemFreeDerivativesLocked(this, NULL);
+				cur_params->cnmemFreeDerivatives(NULL);
 				space_tracker.updateSpace(CnmemSpace::ADD, cur_params->kernel_size * data_type_size);
 				space_tracker.updateSpace(CnmemSpace::ADD, cur_params->C_out * data_type_size);
 			}
@@ -1734,7 +1732,7 @@ void NeuralNet::getLoss(void *X, int *y, double learning_rate, std::vector<float
 		else if (layer_type[i] == FULLY_CONNECTED) {
 			if (!pre_alloc_fc_derivative) {
 				FCLayerParams *cur_params = (FCLayerParams *)params[i];
-				cur_params->cnmemFreeDerivativesLocked(this, NULL);
+				cur_params->cnmemFreeDerivatives(NULL);
 				space_tracker.updateSpace(CnmemSpace::ADD, cur_params->weight_matrix_size * data_type_size);
 				space_tracker.updateSpace(CnmemSpace::ADD, cur_params->C_out * data_type_size);
 			}
@@ -1742,18 +1740,18 @@ void NeuralNet::getLoss(void *X, int *y, double learning_rate, std::vector<float
 		else if (layer_type[i] == BATCHNORM) {
 			if (train == true and !pre_alloc_batch_norm_derivative) {
 				BatchNormLayerParams *cur_params = (BatchNormLayerParams *)params[i];
-				cur_params->cnmemFreeDerivativesLocked(this, NULL);
+				cur_params->cnmemFreeDerivatives(NULL);
 				space_tracker.updateSpace(CnmemSpace::ADD, cur_params->allocation_size * data_type_size);
 				space_tracker.updateSpace(CnmemSpace::ADD, cur_params->allocation_size * data_type_size);
 			}
 		}
 
-		lockedcnmemFree(layer_input[i + 1], NULL);
+		checkCNMEM(cnmemFree(layer_input[i + 1], NULL));
 		space_tracker.updateSpace(CnmemSpace::ADD, layer_input_size[i + 1] * data_type_size);
-		lockedcnmemFree(dlayer_input[i + 1], NULL);
+		checkCNMEM(cnmemFree(dlayer_input[i + 1], NULL));
 		space_tracker.updateSpace(CnmemSpace::ADD, layer_input_size[i + 1] * data_type_size);
 		if (i == 0) {
-			lockedcnmemFree(layer_input[i], NULL);
+			checkCNMEM(cnmemFree(layer_input[i], NULL));
 			space_tracker.updateSpace(CnmemSpace::ADD, layer_input_size[i] * data_type_size);
 		}	
 		// ---------------------- vDNN end ------------------------

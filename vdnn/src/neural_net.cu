@@ -594,8 +594,6 @@ bool NeuralNet::simulateCNMEMMemory(size_t &max_consume) {
 	size_t init_max_consume = max_consume;
 	cnmemDevice_t cnmem_device;
 
-	size_t t;
-	checkCudaErrors(cudaMemGetInfo(&free_bytes, &t));
 	std::cout << "free_bytes: " << free_bytes << std::endl;
 	free_bytes -= 100 * 1024 * 1024;
 	cnmem_device.device = 0;

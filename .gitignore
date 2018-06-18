@@ -8,5 +8,6 @@ cmake_install.cmake
 
 things_to_do.txt
 
-final_experiments/
+final_experiments/*
+!final_experiments/copy_res.sh
 report/

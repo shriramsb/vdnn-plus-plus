@@ -23,3 +23,9 @@ mkdir first_run
 for f in *.dat*; do
 	mv $f first_run/$f
 done;
+cd first_run
+mkdir cnmem_log
+for f in cnmem_*; do
+	mv $f cnmem_log/$f
+done;
+cd ..
