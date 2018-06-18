@@ -430,7 +430,7 @@ int main(int argc, char *argv[]) {
 	
 	ConvAlgo conv_algo = CONV_ALGO_PERFORMANCE_OPTIMAL;
 	string filename("base_p");
-	if (argc == 2) {
+	if (argc >= 2) {
 		if (strcmp(argv[1], "p") == 0) {
 			conv_algo = CONV_ALGO_PERFORMANCE_OPTIMAL;
 			filename.assign("base_p");
@@ -446,6 +446,10 @@ int main(int argc, char *argv[]) {
 
 
 	int batch_size = 256;
+	if (argc >= 3) {
+		batch_size = atoi(argv[2]);
+		num_train = 2 * batch_size;
+	}
 	long long dropout_seed = 1;
 	float softmax_eps = 1e-8;
 	float init_std_dev = 0.1;

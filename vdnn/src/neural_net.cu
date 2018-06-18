@@ -346,11 +346,17 @@ NeuralNet::NeuralNet(std::vector<LayerSpecifier> &layers, DataType data_type, in
 	checkCudaErrors(cudaDeviceSynchronize());
 	checkCudaErrors(cudaMemGetInfo(&free_bytes, &total_bytes));
 
-	// leave 600 MB and use the rest
 	std::cout << "Free bytes: " << free_bytes << std::endl;
+	// leave 500 MB and use the rest
+#ifdef GTX970	
+	free_bytes -= 500 * 1024 * 1024;
+#endif
 	// ---------------------- vDNN start ----------------------
 	size_t exp_max_consume, max_consume;
 	vDNNOptimize(exp_max_consume, max_consume);
+#ifdef GTX970	
+	free_bytes += 500 * 1024 * 1024;
+#endif
 	std::cout << "actual_max_consume: " << max_consume << std::endl;
 	std::cout << "exp_max_consume: " << exp_max_consume << std::endl;
 	std::cout << "diff_max_consume(MB): " << (max_consume - exp_max_consume) / (1.0 * 1024 * 1024) << std::endl;

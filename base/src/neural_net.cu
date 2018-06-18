@@ -324,10 +324,13 @@ NeuralNet::NeuralNet(std::vector<LayerSpecifier> &layers, DataType data_type, in
 	// if total consume crosses 3.4 GB, stop
 	std::cout << "Total consume: " << init_free_bytes - free_bytes << std::endl;
 	std::cout << "Total consume(MB): " << (init_free_bytes - free_bytes) / (1.0 * 1024 * 1024) << std::endl;
-	// if ((total_bytes - free_bytes) > 3400l * 1024 * 1024) {
-	// 	std::cout << "Crosses 3.4GB\n";
-	// 	exit(0);
-	// }
+	
+#ifdef GTX970
+	if ((total_bytes - free_bytes) > 3400l * 1024 * 1024) {
+		std::cout << "Crosses 3.4GB\n";
+		exit(0);
+	}
+#endif
 
 	checkCudaErrors(cudaMallocHost((void **)&h_loss, batch_size * sizeof(float)));
 	checkCudaErrors(cudaMallocHost((void **)&h_pred_y, batch_size * sizeof(int)));

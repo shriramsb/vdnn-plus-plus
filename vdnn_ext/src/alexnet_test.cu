@@ -368,7 +368,7 @@ int main(int argc, char *argv[]) {
 	vDNNConvAlgo vdnn_conv_algo = vDNN_PERFORMANCE_OPTIMAL;
 	vDNNType vdnn_type = vDNN_DYN;
 	string filename("vdnn_dyn");
-	if (argc == 3) {
+	if (argc >= 3) {
 		filename.assign("vdnn");
 		// argv[1] - layers to offload, argv[2] - conv algo to use
 		if (strcmp(argv[1], "dyn") == 0) {
@@ -408,6 +408,10 @@ int main(int argc, char *argv[]) {
 	}
 
 	int batch_size = 256;
+	if (argc >= 4) {
+		batch_size = atoi(argv[3]);
+		num_train = batch_size * 2;
+	}
 	long long dropout_seed = 1;
 	float softmax_eps = 1e-8;
 	float init_std_dev = 0.1;
