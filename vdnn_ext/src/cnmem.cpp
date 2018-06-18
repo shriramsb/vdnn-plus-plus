@@ -680,7 +680,7 @@ cnmemStatus_t Manager::allocateBlockUnsafe(Block *&curr, Block *&prev, std::size
 			}
 			// test run - need to change if cudaMalloc actually returns discontinuous address
 			std::size_t extra_size = size - last->getSize();
-			extra_size = cnmem::ceilInt(extra_size, CUDA_GRANULARITY);
+			// extra_size = cnmem::ceilInt(extra_size, CUDA_GRANULARITY);
 
 			CNMEM_DEBUG_INFO("cudaMalloc(%lu)\n", extra_size);
 			CNMEM_CHECK_CUDA(cudaMalloc(&data, extra_size));
@@ -702,7 +702,7 @@ cnmemStatus_t Manager::allocateBlockUnsafe(Block *&curr, Block *&prev, std::size
 
 		}
 		// if last == NULL or cudaMalloc cannot be merged
-		size = cnmem::ceilInt(size, CUDA_GRANULARITY);
+		// size = cnmem::ceilInt(size, CUDA_GRANULARITY);
 		CNMEM_DEBUG_INFO("cudaMalloc(%lu)\n", size);
 		CNMEM_CHECK_CUDA(cudaMalloc(&data, size));
 		CNMEM_DEBUG_INFO(">> returned address=0x%016lx\n", (size_t) data);
