@@ -81,6 +81,7 @@ public:
 	PtrIndex *layer_num;
 
 	void lockedcnmemMalloc(void **p, size_t size, cudaStream_t stream);
+	void lockedcnmemMallocRight(void **p, size_t size, cudaStream_t stream);
 	void lockedcnmemFree(void *p, cudaStream_t stream);
 	
 	static void *threadFreeLayerInputHelper(void *arg);

@@ -348,16 +348,15 @@ NeuralNet::NeuralNet(std::vector<LayerSpecifier> &layers, DataType data_type, in
 
 	// leave 600 MB and use the rest
 	std::cout << "Free bytes: " << free_bytes << std::endl;
-	free_bytes -= 1024 * 1024 * 600;
 	// ---------------------- vDNN start ----------------------
 	size_t exp_max_consume, max_consume;
 	vDNNOptimize(exp_max_consume, max_consume);
 	std::cout << "actual_max_consume: " << max_consume << std::endl;
 	std::cout << "exp_max_consume: " << exp_max_consume << std::endl;
 	std::cout << "diff_max_consume(MB): " << (max_consume - exp_max_consume) / (1.0 * 1024 * 1024) << std::endl;
-	std::cout << "exp_free_bytes(MB): " << (free_bytes + 1024 * 1024 * 600 - exp_max_consume) / (1.0 * 1024 * 1024) << std::endl;
-	std::cout << "exp_total_consume(MB): " << (init_free_bytes - (free_bytes + 600 * 1024 * 1024 - exp_max_consume)) / (1.0 * 1024 * 1024) << std::endl;
-	std::cout << "actual_total_consume(MB): " << (init_free_bytes - (free_bytes + 600 * 1024 * 1024 - max_consume)) / (1.0 * 1024 * 1024) << std::endl;
+	std::cout << "exp_free_bytes(MB): " << (free_bytes - exp_max_consume) / (1.0 * 1024 * 1024) << std::endl;
+	std::cout << "exp_total_consume(MB): " << (init_free_bytes - (free_bytes - exp_max_consume)) / (1.0 * 1024 * 1024) << std::endl;
+	std::cout << "actual_total_consume(MB): " << (init_free_bytes - (free_bytes - max_consume)) / (1.0 * 1024 * 1024) << std::endl;
 
 	// ---------------------- vDNN end ------------------------
 
@@ -621,6 +620,14 @@ bool NeuralNet::simulateCNMEMMemory(size_t &max_consume) {
 	else if (vdnn_type == vDNN_DYN) {
 		cnmem_memory_state_filename = "cnmem_dyn.dat";
 	}
+	else if (vdnn_type == vDNN_ALTERNATE_CONV) {
+		if (vdnn_conv_algo == vDNN_PERFORMANCE_OPTIMAL) {
+			cnmem_memory_state_filename = "cnmem_alternate_conv_p.dat";
+		}
+		else if (vdnn_conv_algo == vDNN_MEMORY_OPTIMAL) {
+			cnmem_memory_state_filename = "cnmem_alternate_conv_m.dat";
+		}
+	}
 	else {
 		cnmem_memory_state_filename = "cnmem_unknown.dat";
 	}
@@ -648,8 +655,14 @@ bool NeuralNet::simulateCNMEMMemory(size_t &max_consume) {
 		fprintf(cnmem_memory_state_fptr, "initial state\n");
 		cnmemPrintMemoryStateTogether(cnmem_memory_state_fptr, NULL);
 
-		checkCNMEMSim(cnmemMalloc(&layer_input[0], layer_input_size[0] * data_type_size, NULL), 
-						layer_input_size[0] * data_type_size, max_consume, free_bytes, checkCNMEM(cnmemFinalize()); continue, out_of_memory);
+		if (to_offload[0]) {
+			checkCNMEMSim(cnmemMalloc(&layer_input[0], layer_input_size[0] * data_type_size, NULL), 
+							layer_input_size[0] * data_type_size, max_consume, free_bytes, checkCNMEM(cnmemFinalize()); continue, out_of_memory);
+		}
+		else {
+			checkCNMEMSimRight(cnmemMallocRight(&layer_input[0], layer_input_size[0] * data_type_size, NULL), 
+								layer_input_size[0] * data_type_size, max_consume, free_bytes, checkCNMEM(cnmemFinalize()); continue, out_of_memory);	
+		}
 
 		fprintf(cnmem_memory_state_fptr, "after alloc. layer_input[%d] - size: %lu\n", 0, layer_input_size[0] * data_type_size);
 		cnmemPrintMemoryStateTogether(cnmem_memory_state_fptr, NULL);
@@ -659,8 +672,14 @@ bool NeuralNet::simulateCNMEMMemory(size_t &max_consume) {
 			size_t cur_workspace_size;
 			void *cur_workspace;
 
-			checkCNMEMSim(cnmemMalloc(&layer_input[i + 1], layer_input_size[i + 1] * data_type_size, NULL), 
-							layer_input_size[i + 1] * data_type_size, max_consume, free_bytes, break, out_of_memory);
+			if (to_offload[i + 1]) {
+				checkCNMEMSim(cnmemMalloc(&layer_input[i + 1], layer_input_size[i + 1] * data_type_size, NULL), 
+								layer_input_size[i + 1] * data_type_size, max_consume, free_bytes, break, out_of_memory);
+			}
+			else {
+				checkCNMEMSimRight(cnmemMallocRight(&layer_input[i + 1], layer_input_size[i + 1] * data_type_size, NULL), 
+									layer_input_size[i + 1] * data_type_size, max_consume, free_bytes, break, out_of_memory);	
+			}
 
 			fprintf(cnmem_memory_state_fptr, "after alloc. layer_input[%d] - size: %lu\n", i + 1, layer_input_size[i + 1] * data_type_size);
 			cnmemPrintMemoryStateTogether(cnmem_memory_state_fptr, NULL);
@@ -1086,7 +1105,12 @@ void NeuralNet::getLoss(void *X, int *y, double learning_rate, std::vector<float
 	for (int i = 0; i < num_layers; i++)
 		prefetched[i] = false;
 
-	checkCNMEM(cnmemMalloc(&layer_input[0], layer_input_size[0] * data_type_size, NULL));
+	if (to_offload[0]) {
+		checkCNMEM(cnmemMalloc(&layer_input[0], layer_input_size[0] * data_type_size, NULL));
+	}
+	else {
+		checkCNMEM(cnmemMallocRight(&layer_input[0], layer_input_size[0] * data_type_size, NULL));
+	}
 	space_tracker.updateSpace(CnmemSpace::SUB, layer_input_size[0] * data_type_size);
 	checkCudaErrors(cudaMemcpy(layer_input[0], X, batch_size * input_channels * input_h * input_w * data_type_size, cudaMemcpyHostToDevice));
 	if (train == true) {
@@ -1109,7 +1133,12 @@ void NeuralNet::getLoss(void *X, int *y, double learning_rate, std::vector<float
 			checkCudaErrors(cudaMemcpyAsync(h_layer_input[i], layer_input[i], 
 											layer_input_size[i] * data_type_size, cudaMemcpyDeviceToHost, stream_memory));
 
-		checkCNMEM(cnmemMalloc(&layer_input[i + 1], layer_input_size[i + 1] * data_type_size, NULL));
+		if (to_offload[i + 1]) {
+			checkCNMEM(cnmemMalloc(&layer_input[i + 1], layer_input_size[i + 1] * data_type_size, NULL));
+		}
+		else {
+			checkCNMEM(cnmemMallocRight(&layer_input[i + 1], layer_input_size[i + 1] * data_type_size, NULL));	
+		}
 		space_tracker.updateSpace(CnmemSpace::SUB, layer_input_size[i + 1] * data_type_size);
 		// std::cout << "Free bytes: " << free_bytes << std::endl;
 		// ---------------------- vDNN end ------------------------
