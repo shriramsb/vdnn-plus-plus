@@ -496,7 +496,11 @@ int main(int argc, char *argv[]) {
 	Solver solver(&net, (void *)f_train_images, f_train_labels, (void *)f_train_images, f_train_labels, num_epoch, SGD, learning_rate, learning_rate_decay, num_train, num_train);
 	vector<float> loss;
 	vector<float> time;
+#ifdef GTX970
+	solver.getTrainTime(loss, time, 40);
+#else
 	solver.getTrainTime(loss, time, 100);
+#endif
 	printTimes(time, filename);
 
 }

@@ -388,7 +388,11 @@ int main(int argc, char *argv[]) {
 	vector<float> loss;
 	vector<float> time;
 	vector<vector<float> > fwd_vdnn_lag, bwd_vdnn_lag;
+#ifdef GTX970
+	solver.getTrainTime(loss, time, 40, fwd_vdnn_lag, bwd_vdnn_lag);
+#else
 	solver.getTrainTime(loss, time, 100, fwd_vdnn_lag, bwd_vdnn_lag);
+#endif
 	printTimes(time, filename);
 	printvDNNLag(fwd_vdnn_lag, bwd_vdnn_lag, filename);
 
