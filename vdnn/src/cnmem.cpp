@@ -352,6 +352,8 @@ public:
 	cnmemStatus_t removeCudaBlockUnsafe(void *ptr);
 	/// Allocate a block of memory.
 	cnmemStatus_t allocate(void *&ptr, std::size_t size, bool isBlocking = true);
+	/// Allocate a block of memory from the rightmost free block if possible.
+	cnmemStatus_t allocateRight(void *&ptr, std::size_t size, bool isBlocking = true);
 	/// Release a block of memory.
 	cnmemStatus_t release(void *ptr);
 	/// Release memory. It returns true if we have no memory leak.
@@ -391,6 +393,8 @@ public:
 
 	/// Largest free block's size
 	cnmemStatus_t getLargestFreeBlockSize(std::size_t &size) const;
+	/// Rightmost free block's size
+	cnmemStatus_t getRightmostFreeBlockSize(std::size_t &size) const;
 
 	/// The associated device.
 	inline int getDevice() const { return mDevice; }
@@ -434,8 +438,12 @@ private:
 	cnmemStatus_t releaseBlockUnsafe(Block *curr, Block *prev);
 	/// Find the best free node based on the size.
 	cnmemStatus_t findBestBlockUnsafe(Block *&curr, Block *&prev, std::size_t size);
+	/// Find the rightmost free node based on the size.
+	cnmemStatus_t findRightmostFreeBlockUnsafe(Block *&curr, Block *&prev, std::size_t size);
 	/// Extract a node from the list of free blocks.
 	cnmemStatus_t extractBlockUnsafe(Block *curr, Block *prev, std::size_t size, bool stolen);
+	/// Extract from the given block from the right
+	cnmemStatus_t extractBlockRightUnsafe(Block *curr, Block *prev, Block *&new_block, std::size_t size, bool stolen);
 	
 	/// Give a free block from that manager.
 	cnmemStatus_t giveBlockUnsafe(void *&data, std::size_t &dataSize, std::size_t size);
@@ -561,6 +569,21 @@ cnmemStatus_t Manager::getLargestFreeBlockSize(std::size_t &size) const {
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
+cnmemStatus_t Manager::getRightmostFreeBlockSize(std::size_t &size) const {
+	CNMEM_CHECK(mMutex.lock());
+	Block *temp = mFreeBlocks;
+	size = 0;
+	if (temp != NULL) {
+		for ( ; temp->getNext() ; temp = temp->getNext() );
+
+		size = temp->getSize();
+	}
+	CNMEM_CHECK(mMutex.unlock());
+	return CNMEM_STATUS_SUCCESS;
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////////////
+
 cnmemStatus_t Manager::allocate(void *&ptr, std::size_t size, bool isBlocking) {
 	CNMEM_CHECK(mMutex.lock());
 
@@ -591,6 +614,47 @@ cnmemStatus_t Manager::allocate(void *&ptr, std::size_t size, bool isBlocking) {
 	// Push the node to the list of used nodes.
 	best->setNext(mUsedBlocks);
 	mUsedBlocks = best;
+
+	// Return the new pointer into memory.
+	ptr = mUsedBlocks->getData();
+	CNMEM_CHECK(mMutex.unlock());
+	return CNMEM_STATUS_SUCCESS;
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////////////
+
+cnmemStatus_t Manager::allocateRight(void *&ptr, std::size_t size, bool isBlocking) {
+	CNMEM_CHECK(mMutex.lock());
+
+	// If the client is not blocking, we have to explicitly synchronize before giving one buffer.
+	if( !isBlocking ) {
+		CNMEM_CHECK_CUDA_OR_UNLOCK(cudaStreamSynchronize(mStream), mMutex);
+	}
+
+	// find right-most freeBlock
+	Block *rightmost_free = NULL, *prev = NULL;
+	CNMEM_CHECK_OR_UNLOCK(findRightmostFreeBlockUnsafe(rightmost_free, prev, size), mMutex);
+
+	// If there's no block left in the list of free blocks (with a sufficient size). Request a new block. 
+	// CNMEM_FLAGS_CANNOT_GROW is always set in mFlags in our case
+	if( rightmost_free == NULL && !(mFlags & CNMEM_FLAGS_CANNOT_GROW) ) {
+		CNMEM_CHECK_OR_UNLOCK(allocateBlockUnsafe(rightmost_free, prev, size), mMutex);
+	}
+	
+	// Make sure we do have a block or quit.
+	if( !rightmost_free ) {
+		ptr = NULL;
+		CNMEM_CHECK(mMutex.unlock());
+		return CNMEM_STATUS_OUT_OF_MEMORY;
+	}
+
+	// Split the free block if needed.
+	Block *new_block;
+	CNMEM_CHECK_OR_UNLOCK(extractBlockRightUnsafe(rightmost_free, prev, new_block, size, false), mMutex);
+
+	// Push the node to the list of used nodes.
+	new_block->setNext(mUsedBlocks);
+	mUsedBlocks = new_block;
 
 	// Return the new pointer into memory.
 	ptr = mUsedBlocks->getData();
@@ -697,6 +761,31 @@ cnmemStatus_t Manager::extractBlockUnsafe(Block *curr, Block *prev, std::size_t 
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
+cnmemStatus_t Manager::extractBlockRightUnsafe(Block *curr, Block *prev, Block *&new_block, std::size_t size, bool stolen) {
+	// We have two cases: 1/ It is the right size so we keep it or 2/ it is too large and we split the node.
+	if( curr->getSize() == size ) {
+		Block *next = curr->getNext();
+		if (prev) {
+			prev->setNext(next);
+		}
+		else
+			mFreeBlocks = next;
+		new_block = curr;
+	}
+	else {
+		std::size_t remaining = curr->getSize()-size;
+		curr->setSize(remaining);
+		new_block = new Block(curr->getData() + remaining, size, NULL, stolen);
+		if( !new_block ) {
+			return CNMEM_STATUS_OUT_OF_MEMORY;
+		}
+	}
+	
+	return CNMEM_STATUS_SUCCESS;
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////////////
+
 cnmemStatus_t Manager::findBestBlockUnsafe(Block *&best, Block *&prev, std::size_t size) {
 	best = NULL, prev = NULL;
 	for( Block *temp = mFreeBlocks, *tempPrev = NULL ; temp ; temp = temp->getNext() ) {
@@ -706,6 +795,24 @@ cnmemStatus_t Manager::findBestBlockUnsafe(Block *&best, Block *&prev, std::size
 		}
 		tempPrev = temp;
 	}
+	return CNMEM_STATUS_SUCCESS;
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////////////
+
+cnmemStatus_t Manager::findRightmostFreeBlockUnsafe(Block *&rightmost_free, Block *&prev, std::size_t size) {
+	rightmost_free = mFreeBlocks;
+	prev = NULL;
+	if (rightmost_free == NULL)
+		return CNMEM_STATUS_SUCCESS;
+
+	for(  ; rightmost_free->getNext() ; rightmost_free = rightmost_free->getNext() ) {
+		prev = rightmost_free;
+	}
+
+	if (size > rightmost_free->getSize())
+		rightmost_free = NULL;
+	
 	return CNMEM_STATUS_SUCCESS;
 }
 
@@ -1469,6 +1576,36 @@ cnmemStatus_t cnmemMalloc(void **ptr, std::size_t size, cudaStream_t stream) {
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
+cnmemStatus_t cnmemMallocRight(void **ptr, std::size_t size, cudaStream_t stream) {
+	CNMEM_CHECK_TRUE(cnmem::Context::check(), CNMEM_STATUS_NOT_INITIALIZED);
+	if( !ptr && !size ) {
+		return CNMEM_STATUS_SUCCESS;
+	}
+	else if( !size ) {
+		ptr[0] = NULL;
+		return CNMEM_STATUS_SUCCESS;
+	}
+	CNMEM_CHECK_TRUE(ptr,  CNMEM_STATUS_INVALID_ARGUMENT);
+	
+	int device;
+	CNMEM_CHECK_CUDA(cudaGetDevice(&device));
+
+	// only root manager handled here
+	cnmem::Manager &root = cnmem::Context::get()->getManager(device);
+	cnmem::Manager *manager = &root;
+	if( stream ) {
+		return CNMEM_STATUS_INVALID_ARGUMENT;
+	}
+	CNMEM_ASSERT(manager);
+	
+	size = cnmem::ceilInt(size, CNMEM_GRANULARITY);
+	cnmemStatus_t result = manager->allocateRight(ptr[0], size);
+
+	return result;
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////////////
+
 cnmemStatus_t cnmemFree(void *ptr, cudaStream_t stream) {
 	CNMEM_CHECK_TRUE(cnmem::Context::check(), CNMEM_STATUS_NOT_INITIALIZED);
 	if( ptr == NULL ) {
@@ -1574,6 +1711,22 @@ cnmemStatus_t cnmemGetLargestFreeBlockSize(std::size_t &size, cudaStream_t strea
 	}
 	CNMEM_ASSERT(manager);
 	return manager->getLargestFreeBlockSize(size);
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////////////
+
+cnmemStatus_t cnmemGetRightmostFreeBlockSize(std::size_t &size, cudaStream_t stream) {
+	CNMEM_CHECK_TRUE(cnmem::Context::check(), CNMEM_STATUS_NOT_INITIALIZED);
+
+	int device;
+	CNMEM_CHECK_CUDA(cudaGetDevice(&device));
+	cnmem::Manager &root = cnmem::Context::get()->getManager(device);
+	cnmem::Manager *manager = &root;
+	if( stream ) {
+		CNMEM_CHECK(root.getChildFromStream(manager, stream));
+	}
+	CNMEM_ASSERT(manager);
+	return manager->getRightmostFreeBlockSize(size);
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////

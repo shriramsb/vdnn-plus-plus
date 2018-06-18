@@ -203,6 +203,31 @@ cnmemStatus_t CNMEM_API cnmemRegisterStream(cudaStream_t stream);
 cnmemStatus_t CNMEM_API cnmemMalloc(void **ptr, size_t size, cudaStream_t stream);
 
 /**
+ * \brief Allocate memory. 
+ * 
+ * This function allocates memory and initializes a pointer to device memory. If no memory 
+ * is available, it returns a CNMEM_STATUS_OUT_OF_MEMORY error. This function is thread safe.
+ *
+ * The behavior of that function is the following: 
+ *
+ * - This function handles only request to root manager
+ *
+ * The calls to cudaMalloc are potentially costly and may induce GPU synchronizations. Also the 
+ * mechanism to steal memory from the children induces GPU synchronizations (the manager has to 
+ * make sure no kernel uses a given buffer before stealing it) and it the execution is 
+ * sequential (in a multi-threaded context, the code is executed in a critical section inside
+ * the cnmem library - no need for the user to wrap cnmemMalloc with locks).
+ *
+ * \return 
+ * CNMEM_STATUS_SUCCESS,          if everything goes fine,
+ * CNMEM_STATUS_NOT_INITIALIZED,  if the ::cnmemInit function has not been called,
+ * CNMEM_STATUS_INVALID_ARGUMENT, if one of the argument is invalid. For example, ptr == 0,
+ * CNMEM_STATUS_OUT_OF_MEMORY,    if there is not enough memory available,
+ * CNMEM_STATUS_CUDA_ERROR,       if an error happens in one of the CUDA functions.
+ */
+cnmemStatus_t CNMEM_API cnmemMallocRight(void **ptr, size_t size, cudaStream_t stream);
+
+/**
  * \brief Release memory. 
  * 
  * This function releases memory and recycles a memory block in the manager. This function is 
@@ -283,6 +308,13 @@ cnmemStatus_t CNMEM_API cnmemGetLastFreeBlockSize(std::size_t &size, cudaStream_
 * Always returns CNMEM_STATUS_SUCCESS
 */
 cnmemStatus_t CNMEM_API cnmemGetLargestFreeBlockSize(std::size_t &size, cudaStream_t stream);
+
+/**
+* \brief Gets the size of rightmost free block, if exists, otherwise gives 0
+* 
+* Always returns CNMEM_STATUS_SUCCESS
+*/
+cnmemStatus_t CNMEM_API cnmemGetRightmostFreeBlockSize(std::size_t &size, cudaStream_t stream);
 
 /* ********************************************************************************************* */
 
