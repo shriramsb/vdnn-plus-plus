@@ -1192,6 +1192,9 @@ void *NeuralNet::threadFlagPrefetchDoneHelper(void *arg) {
 }
 
 void NeuralNet::getLoss(void *X, int *y, double learning_rate, std::vector<float> &fwd_vdnn_lag, std::vector<float> &bwd_vdnn_lag, bool train, int *correct_count, float *scalar_loss) {
+#ifdef DEBUG_FPROP_ALLOC
+	FILE *fprop_alloc_fptr = fopen("fprop_alloc.dat", "w");
+#endif
 
 	CnmemSpace space_tracker(free_bytes);
 	// std::cout << "here\n";
@@ -1217,6 +1220,9 @@ void NeuralNet::getLoss(void *X, int *y, double learning_rate, std::vector<float
 
 	// forward propagate
 	for (int i = 0; i < num_layers; i++) {
+#ifdef DEBUG_FPROP_ALLOC
+		cnmemPrintMemoryStateTogether(fprop_alloc_fptr, NULL);
+#endif
 		if (train == false && i == num_layers - 1)
 			break;
 		// ---------------------- vDNN start ----------------------
@@ -1471,6 +1477,11 @@ void NeuralNet::getLoss(void *X, int *y, double learning_rate, std::vector<float
 	clock_gettime(CLOCK_MONOTONIC, &end_time);
 	float lag = (end_time.tv_sec - start_time.tv_sec) * 1e3 + (end_time.tv_nsec - start_time.tv_nsec) * 1e-6;
 	fwd_vdnn_lag.push_back(lag);
+#ifdef DEBUG_FPROP_ALLOC
+	cnmemPrintMemoryStateTogether(fprop_alloc_fptr, NULL);
+	fclose(fprop_alloc_fptr);
+	exit(0);
+#endif
 
 	*scalar_loss = computeLoss();
 
