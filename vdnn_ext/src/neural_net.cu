@@ -687,6 +687,7 @@ bool NeuralNet::simulateCNMEMMemory(size_t &max_consume) {
 		fprintf(cnmem_memory_state_fptr, "initial state\n");
 		cnmemPrintMemoryStateTogether(cnmem_memory_state_fptr, NULL);
 
+#ifdef ALLOC_NON_OFFLOAD_RIGHT
 		if (to_offload[0]) {
 			checkCNMEMSim(cnmemMalloc(&layer_input[0], layer_input_size[0] * data_type_size, NULL), 
 							layer_input_size[0] * data_type_size, max_consume, free_bytes, checkCNMEM(cnmemFinalize()); continue, out_of_memory);
@@ -695,6 +696,10 @@ bool NeuralNet::simulateCNMEMMemory(size_t &max_consume) {
 			checkCNMEMSimRight(cnmemMallocRight(&layer_input[0], layer_input_size[0] * data_type_size, NULL), 
 								layer_input_size[0] * data_type_size, max_consume, free_bytes, checkCNMEM(cnmemFinalize()); continue, out_of_memory);	
 		}
+#else
+	checkCNMEMSim(cnmemMalloc(&layer_input[0], layer_input_size[0] * data_type_size, NULL), 
+							layer_input_size[0] * data_type_size, max_consume, free_bytes, checkCNMEM(cnmemFinalize()); continue, out_of_memory);
+#endif
 
 		fprintf(cnmem_memory_state_fptr, "after alloc. layer_input[%d] - size: %lu\n", 0, layer_input_size[0] * data_type_size);
 		cnmemPrintMemoryStateTogether(cnmem_memory_state_fptr, NULL);
@@ -704,6 +709,7 @@ bool NeuralNet::simulateCNMEMMemory(size_t &max_consume) {
 			size_t cur_workspace_size;
 			void *cur_workspace;
 
+#ifdef ALLOC_NON_OFFLOAD_RIGHT
 			if (to_offload[i + 1]) {
 				checkCNMEMSim(cnmemMalloc(&layer_input[i + 1], layer_input_size[i + 1] * data_type_size, NULL), 
 								layer_input_size[i + 1] * data_type_size, max_consume, free_bytes, break, out_of_memory);
@@ -712,6 +718,10 @@ bool NeuralNet::simulateCNMEMMemory(size_t &max_consume) {
 				checkCNMEMSimRight(cnmemMallocRight(&layer_input[i + 1], layer_input_size[i + 1] * data_type_size, NULL), 
 									layer_input_size[i + 1] * data_type_size, max_consume, free_bytes, break, out_of_memory);	
 			}
+#else
+	checkCNMEMSim(cnmemMalloc(&layer_input[i + 1], layer_input_size[i + 1] * data_type_size, NULL), 
+								layer_input_size[i + 1] * data_type_size, max_consume, free_bytes, break, out_of_memory);
+#endif
 
 			fprintf(cnmem_memory_state_fptr, "after alloc. layer_input[%d] - size: %lu\n", i + 1, layer_input_size[i + 1] * data_type_size);
 			cnmemPrintMemoryStateTogether(cnmem_memory_state_fptr, NULL);
@@ -1218,12 +1228,16 @@ void NeuralNet::getLoss(void *X, int *y, double learning_rate, std::vector<float
 	for (int i = 0; i < num_layers; i++)
 		prefetched[i] = false;
 
+#ifdef ALLOC_NON_OFFLOAD_RIGHT
 	if (to_offload[0]) {
 		checkCNMEM(cnmemMalloc(&layer_input[0], layer_input_size[0] * data_type_size, NULL));
 	}
 	else {
 		checkCNMEM(cnmemMallocRight(&layer_input[0], layer_input_size[0] * data_type_size, NULL));	
 	}
+#else
+	checkCNMEM(cnmemMalloc(&layer_input[0], layer_input_size[0] * data_type_size, NULL));
+#endif
 
 	space_tracker.updateSpace(CnmemSpace::SUB, layer_input_size[0] * data_type_size);
 	checkCudaErrors(cudaMemcpy(layer_input[0], X, batch_size * input_channels * input_h * input_w * data_type_size, cudaMemcpyHostToDevice));
@@ -1261,12 +1275,18 @@ void NeuralNet::getLoss(void *X, int *y, double learning_rate, std::vector<float
 		fflush(fprop_alloc_fptr);
 #endif
 #endif
+
+#ifdef ALLOC_NON_OFFLOAD_RIGHT
 		if (to_offload[i + 1]) {
 			lockedcnmemMalloc(&layer_input[i + 1], layer_input_size[i + 1] * data_type_size, NULL);
 		}
 		else {
 			lockedcnmemMallocRight(&layer_input[i + 1], layer_input_size[i + 1] * data_type_size, NULL);	
 		}
+#else
+		lockedcnmemMalloc(&layer_input[i + 1], layer_input_size[i + 1] * data_type_size, NULL);
+#endif
+
 #ifdef DEBUG_FPROP_ALLOC
 #ifdef DEBUG_FPROP_ALLOC_ITERS
 		cnmemPrintMemoryStateTogether(fprop_alloc_fptr, NULL);
@@ -1291,8 +1311,8 @@ void NeuralNet::getLoss(void *X, int *y, double learning_rate, std::vector<float
 			lockedcnmemMalloc(&cur_workspace, cur_workspace_size, NULL);		
 #ifdef DEBUG_FPROP_ALLOC
 #ifdef DEBUG_FPROP_ALLOC_ITERS
-		cnmemPrintMemoryStateTogether(fprop_alloc_fptr, NULL);
-		fflush(fprop_alloc_fptr);
+			cnmemPrintMemoryStateTogether(fprop_alloc_fptr, NULL);
+			fflush(fprop_alloc_fptr);
 #endif
 #endif
 			// computation

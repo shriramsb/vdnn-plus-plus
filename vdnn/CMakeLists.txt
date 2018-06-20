@@ -7,10 +7,14 @@ link_directories( /usr/local/cuda/lib64/ )
 find_package(CUDA)
 
 OPTION(GTX970 "Set if trained on GTX970" OFF)
+OPTION(ALLOC_NON_OFFLOAD_RIGHT "Set if need to allocate non offloaded layers from right in fprop" OFF)
 
 IF(GTX970)
 	ADD_DEFINITIONS(-DGTX970)
 ENDIF(GTX970)
+IF(ALLOC_NON_OFFLOAD_RIGHT)
+	ADD_DEFINITIONS(-DALLOC_NON_OFFLOAD_RIGHT)
+ENDIF(ALLOC_NON_OFFLOAD_RIGHT)
 
 cuda_add_executable( neural_net_vdnn.out src/main.cu src/solver.cu src/neural_net.cu src/neural_net_time.cu src/layer_params.cu src/user_iface.cu src/utils.cu src/cnmem.cpp)
 target_link_libraries( neural_net_vdnn.out -lcudnn -lcublas -lcurand)
