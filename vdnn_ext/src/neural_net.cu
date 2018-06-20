@@ -3,6 +3,10 @@
 #include <cstdio>
 #include <string>
 
+#ifdef DEBUG_FPROP_ALLOC
+FILE *fprop_alloc_fptr;
+#endif
+
 template <typename T>
 __global__ void softmaxLossBackProp(int *y, T *SO, T *dSO, int batch_size, int output_size, float eps) {
 	int i = blockIdx.x * blockDim.x + threadIdx.x;
@@ -1165,7 +1169,19 @@ void NeuralNet::lockedcnmemFree(void *p, cudaStream_t stream) {
 
 void NeuralNet::threadFreeLayerInputFunction(int layer_num) {
 	checkCudaErrors(cudaEventSynchronize(event_offload_done[layer_num]));
+#ifdef DEBUG_FPROP_ALLOC
+#ifdef DEBUG_FPROP_ALLOC_ITERS
+		fprintf(fprop_alloc_fptr, "Freeing layer_input %d\n", layer_num);
+		fflush(fprop_alloc_fptr);
+#endif
+#endif
 	lockedcnmemFree(layer_input[layer_num], NULL);
+#ifdef DEBUG_FPROP_ALLOC
+#ifdef DEBUG_FPROP_ALLOC_ITERS
+		cnmemPrintMemoryStateTogether(fprop_alloc_fptr, NULL);
+		fflush(fprop_alloc_fptr);
+#endif
+#endif
 	checkSemaphoreErrors(sem_post(&sem_sync_offload[layer_num]));
 	// space_tracker.updateSpace(CnmemSpace::ADD, layer_input_size[layer_num] * data_type_size);
 }
@@ -1193,7 +1209,7 @@ void *NeuralNet::threadFlagPrefetchDoneHelper(void *arg) {
 
 void NeuralNet::getLoss(void *X, int *y, double learning_rate, std::vector<float> &fwd_vdnn_lag, std::vector<float> &bwd_vdnn_lag, bool train, int *correct_count, float *scalar_loss) {
 #ifdef DEBUG_FPROP_ALLOC
-	FILE *fprop_alloc_fptr = fopen("fprop_alloc.dat", "w");
+	fprop_alloc_fptr = fopen("fprop_alloc.dat", "w");
 #endif
 
 	CnmemSpace space_tracker(free_bytes);
@@ -1222,7 +1238,9 @@ void NeuralNet::getLoss(void *X, int *y, double learning_rate, std::vector<float
 	for (int i = 0; i < num_layers; i++) {
 #ifdef DEBUG_FPROP_ALLOC
 #ifdef DEBUG_FPROP_ALLOC_ITERS
+		fprintf(fprop_alloc_fptr, "At start of layer compute %d\n", i);
 		cnmemPrintMemoryStateTogether(fprop_alloc_fptr, NULL);
+		fflush(fprop_alloc_fptr);
 #endif
 #endif
 		if (train == false && i == num_layers - 1)
@@ -1237,13 +1255,24 @@ void NeuralNet::getLoss(void *X, int *y, double learning_rate, std::vector<float
 											layer_input_size[i] * data_type_size, cudaMemcpyDeviceToHost, stream_memory));
 			checkCudaErrors(cudaEventRecord(event_offload_done[i], stream_memory));
 		}
-
+#ifdef DEBUG_FPROP_ALLOC
+#ifdef DEBUG_FPROP_ALLOC_ITERS
+		fprintf(fprop_alloc_fptr, "Allocating layer_input %d - size: %lu\n", i + 1, layer_input_size[i + 1] * data_type_size);
+		fflush(fprop_alloc_fptr);
+#endif
+#endif
 		if (to_offload[i + 1]) {
 			lockedcnmemMalloc(&layer_input[i + 1], layer_input_size[i + 1] * data_type_size, NULL);
 		}
 		else {
 			lockedcnmemMallocRight(&layer_input[i + 1], layer_input_size[i + 1] * data_type_size, NULL);	
 		}
+#ifdef DEBUG_FPROP_ALLOC
+#ifdef DEBUG_FPROP_ALLOC_ITERS
+		cnmemPrintMemoryStateTogether(fprop_alloc_fptr, NULL);
+		fflush(fprop_alloc_fptr);
+#endif
+#endif
 		space_tracker.updateSpace(CnmemSpace::SUB, layer_input_size[i + 1] * data_type_size);
 		// std::cout << "Free bytes: " << free_bytes << std::endl;
 		// ---------------------- vDNN end ------------------------
@@ -1253,7 +1282,19 @@ void NeuralNet::getLoss(void *X, int *y, double learning_rate, std::vector<float
 			ConvLayerParams *cur_params = (ConvLayerParams *)params[i];
 
 			cur_workspace_size = cur_params->fwd_workspace_size;
-			lockedcnmemMalloc(&cur_workspace, cur_workspace_size, NULL);			
+#ifdef DEBUG_FPROP_ALLOC
+#ifdef DEBUG_FPROP_ALLOC_ITERS
+			fprintf(fprop_alloc_fptr, "Allocating workspace size - %lu\n", cur_workspace_size);
+			fflush(fprop_alloc_fptr);
+#endif
+#endif
+			lockedcnmemMalloc(&cur_workspace, cur_workspace_size, NULL);		
+#ifdef DEBUG_FPROP_ALLOC
+#ifdef DEBUG_FPROP_ALLOC_ITERS
+		cnmemPrintMemoryStateTogether(fprop_alloc_fptr, NULL);
+		fflush(fprop_alloc_fptr);
+#endif
+#endif
 			// computation
 			checkCUDNN(cudnnConvolutionForward(cudnn_handle, &alpha, 
 												cur_params->input_tensor, layer_input[i],
@@ -1442,7 +1483,19 @@ void NeuralNet::getLoss(void *X, int *y, double learning_rate, std::vector<float
 		// 	fwd_vdnn_lag.push_back(lag);
 		// }
 		if (layer_type[i] == CONV) {
+#ifdef DEBUG_FPROP_ALLOC
+#ifdef DEBUG_FPROP_ALLOC_ITERS
+			fprintf(fprop_alloc_fptr, "Freeing workspace\n");
+			fflush(fprop_alloc_fptr);
+#endif
+#endif
 			lockedcnmemFree(cur_workspace, NULL);
+#ifdef DEBUG_FPROP_ALLOC
+#ifdef DEBUG_FPROP_ALLOC_ITERS
+			cnmemPrintMemoryStateTogether(fprop_alloc_fptr, NULL);
+			fflush(fprop_alloc_fptr);
+#endif
+#endif
 			space_tracker.updateSpace(CnmemSpace::ADD, cur_workspace_size);
 		}
 
