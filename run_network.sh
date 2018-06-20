@@ -6,8 +6,8 @@ cd base
 cd ../vdnn
 ./run_network.sh $1
 cd ../vdnn_ext
-./run_network.sh $1
-./run_network_reverse.sh $1
+./run_network.sh $1 $2
+./run_network_reverse.sh $1 $2
 cd ../vdnn
 ./run_network_reverse.sh $1
 cd ../base
