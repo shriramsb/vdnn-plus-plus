@@ -1221,7 +1221,9 @@ void NeuralNet::getLoss(void *X, int *y, double learning_rate, std::vector<float
 	// forward propagate
 	for (int i = 0; i < num_layers; i++) {
 #ifdef DEBUG_FPROP_ALLOC
+#ifdef DEBUG_FPROP_ALLOC_ITERS
 		cnmemPrintMemoryStateTogether(fprop_alloc_fptr, NULL);
+#endif
 #endif
 		if (train == false && i == num_layers - 1)
 			break;
