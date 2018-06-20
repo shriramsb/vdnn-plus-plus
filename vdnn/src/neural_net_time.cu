@@ -535,5 +535,8 @@ void NeuralNet::getTransferTime(void *X, int *y, double learning_rate, std::vect
 		checkCudaErrors(cudaEventSynchronize(stop_transfer));
 		checkCudaErrors(cudaEventElapsedTime(&transfer_time, start_transfer, stop_transfer));
 		bwd_transfer_time.push_back(transfer_time);
+		
+		checkCNMEM(cnmemFree(device_data, NULL));
+		checkCudaErrors(cudaFreeHost(host_data));
 	}
 }
