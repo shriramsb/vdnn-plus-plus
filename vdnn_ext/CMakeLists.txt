@@ -41,4 +41,5 @@ target_link_libraries( vgg_test.out -lcudnn -lcublas -lcurand -lpthread)
 cuda_add_executable( slow_conv.out src/slow_conv.cu src/solver.cu src/neural_net.cu src/layer_params.cu src/user_iface.cu src/utils.cu src/cnmem.cpp)
 target_link_libraries( slow_conv.out -lcudnn -lcublas -lcurand -lpthread)
 
-
+cuda_add_executable( vdnn_ext_demo.out src/vdnn_ext_demo.cu src/solver.cu src/neural_net.cu src/layer_params.cu src/user_iface.cu src/utils.cu src/cnmem.cpp)
+target_link_libraries( vdnn_ext_demo.out -lcudnn -lcublas -lcurand -lpthread)

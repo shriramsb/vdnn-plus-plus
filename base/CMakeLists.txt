@@ -24,3 +24,6 @@ target_link_libraries( alexnet_test.out -lcudnn -lcublas -lcurand)
 cuda_add_executable( vgg_test.out src/vgg_test.cu src/solver.cu src/neural_net.cu src/layer_params.cu src/user_iface.cu src/utils.cu )
 target_link_libraries( vgg_test.out -lcudnn -lcublas -lcurand)
 
+cuda_add_executable( vdnn_ext_demo.out src/vdnn_ext_demo.cu src/solver.cu src/neural_net.cu src/layer_params.cu src/user_iface.cu src/utils.cu )
+target_link_libraries( vdnn_ext_demo.out -lcudnn -lcublas -lcurand)
+
