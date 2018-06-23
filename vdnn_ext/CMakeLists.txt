@@ -10,6 +10,7 @@ OPTION(GTX970 "Set if trained on GTX970" OFF)
 OPTION(DEBUG_FPROP_ALLOC "Set if need to dump cnmem state at the end of forward prop" OFF)
 OPTION(DEBUG_FPROP_ALLOC_ITERS "Set if need to dump cnmem state at the start of every iteration of forward prop" OFF)
 OPTION(ALLOC_NON_OFFLOAD_RIGHT "Set if need to allocate non offloaded layers from right in fprop" OFF)
+OPTION(PRINT_FPROP_TIME "Set if need to print forward propagation time" OFF)
 
 
 IF(GTX970)
@@ -25,6 +26,10 @@ ENDIF(DEBUG_FPROP_ALLOC_ITERS)
 IF(ALLOC_NON_OFFLOAD_RIGHT)
 	ADD_DEFINITIONS(-DALLOC_NON_OFFLOAD_RIGHT)
 ENDIF(ALLOC_NON_OFFLOAD_RIGHT)
+
+IF(PRINT_FPROP_TIME)
+  ADD_DEFINITIONS(-DPRINT_FPROP_TIME)
+ENDIF(PRINT_FPROP_TIME)
 
 cuda_add_executable( neural_net_vdnn.out src/main.cu src/solver.cu src/neural_net.cu src/layer_params.cu src/user_iface.cu src/utils.cu src/cnmem.cpp)
 target_link_libraries( neural_net_vdnn.out -lcudnn -lcublas -lcurand -lpthread)

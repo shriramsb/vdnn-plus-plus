@@ -1228,6 +1228,13 @@ void NeuralNet::getLoss(void *X, int *y, double learning_rate, std::vector<float
 	for (int i = 0; i < num_layers; i++)
 		prefetched[i] = false;
 
+#ifdef PRINT_FPROP_TIME
+	cudaEvent_t start, stop;
+	checkCudaErrors(cudaEventCreate(&start));
+	checkCudaErrors(cudaEventCreate(&stop));
+	checkCudaErrors(cudaEventRecord(start));
+#endif
+
 #ifdef ALLOC_NON_OFFLOAD_RIGHT
 	if (to_offload[0]) {
 		checkCNMEM(cnmemMalloc(&layer_input[0], layer_input_size[0] * data_type_size, NULL));
@@ -1556,6 +1563,17 @@ void NeuralNet::getLoss(void *X, int *y, double learning_rate, std::vector<float
 	cnmemPrintMemoryStateTogether(fprop_alloc_fptr, NULL);
 	fclose(fprop_alloc_fptr);
 	exit(0);
+#endif
+
+#ifdef PRINT_FPROP_TIME
+	checkCudaErrors(cudaEventRecord(stop));
+	checkCudaErrors(cudaEventSynchronize(stop));
+	{
+		float milli;
+		checkCudaErrors(cudaEventElapsedTime(&milli, start, stop));
+		std::cout << "forward prop time(ms): " << milli << std::endl;
+		exit(0);
+	}
 #endif
 
 	*scalar_loss = computeLoss();

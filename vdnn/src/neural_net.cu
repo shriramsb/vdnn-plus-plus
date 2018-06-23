@@ -463,6 +463,8 @@ bool NeuralNet::simulateNeuralNetworkMemory(vDNNConvAlgoPref algo_pref, bool har
 		}
 	}
 
+	std::cout << "Forward pass max_consume(MB): " << max_consume / (1.0 * 1024 * 1024) << std::endl;
+
 	std::cerr << "Backward pass" << std::endl;
 	if (batch_size * num_classes * data_type_size != layer_input_size[num_layers] * data_type_size) {
 		std::cout << "Panic!! Using wrong size\n";
@@ -587,6 +589,7 @@ bool NeuralNet::simulateNeuralNetworkMemory(vDNNConvAlgoPref algo_pref, bool har
 	if (space_tracker.getConsumed() != 0)
 		std::cerr << "Panic!! bytes not freed properly\n";
 	// return true;
+	std::cout << "Backward pass max_consume(MB) " << max_consume / (1.0 * 1024 * 1024) << std::endl;
 
 	exp_max_consume = max_consume;
 	// check with cnmem once
@@ -1116,6 +1119,13 @@ void NeuralNet::getLoss(void *X, int *y, double learning_rate, bool train, int *
 
 void NeuralNet::getLoss(void *X, int *y, double learning_rate, std::vector<float> &fwd_vdnn_lag, std::vector<float> &bwd_vdnn_lag, bool train, int *correct_count, float *scalar_loss) {
 
+#ifdef PRINT_FPROP_TIME
+	cudaEvent_t start, stop;
+	cudaEventCreate(&start);
+	cudaEventCreate(&stop);
+	cudaEventRecord(start);
+#endif
+
 	CnmemSpace space_tracker(free_bytes);
 	// std::cout << "here\n";
 	// std::cout << "Free bytes: " << free_bytes << std::endl;
@@ -1388,6 +1398,17 @@ void NeuralNet::getLoss(void *X, int *y, double learning_rate, std::vector<float
 		space_tracker.updateSpace(CnmemSpace::ADD, layer_input_size[num_layers - 1] * data_type_size);
 		return;
 	}
+#ifdef PRINT_FPROP_TIME	
+	{
+		cudaEventRecord(stop);
+		float milli;
+		cudaEventSynchronize(stop);
+		cudaEventElapsedTime(&milli, start, stop);
+		std::cout << "forward prop time(ms): " << milli << std::endl;
+		exit(0);
+	}
+#endif
+
 	*scalar_loss = computeLoss();
 
 	// ---------------------- vDNN start ----------------------
