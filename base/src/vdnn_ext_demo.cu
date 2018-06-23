@@ -266,7 +266,8 @@ int main(int argc, char *argv[]) {
 	// layer_specifier.push_back(temp);
 	
 	// AlexNet
-	int big_conv_size = 19;
+	int big_conv_size = 5;
+	int small_conv_size = 1;
 	int num_rep = 5;
 	vector<LayerSpecifier> layer_specifier;
 	{
@@ -289,7 +290,7 @@ int main(int argc, char *argv[]) {
 	for (int i = 0; i < num_rep; i++) {
 		{
 			ConvDescriptor layer1;
-			layer1.initializeValues(64, 64, 3, 3, 224, 224, 1, 1, 1, 1);
+			layer1.initializeValues(64, 64, small_conv_size, small_conv_size, 224, 224, small_conv_size / 2, small_conv_size / 2, 1, 1);
 			LayerSpecifier temp;
 			temp.initPointer(CONV);
 			*((ConvDescriptor *)temp.params) = layer1;
