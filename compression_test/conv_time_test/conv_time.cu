@@ -4,6 +4,7 @@
 #include <vector>
 #include <cmath>
 #include <limits>
+#include <cstdlib>
 
 #include <cublas_v2.h>
 #include <curand.h>
@@ -217,7 +218,6 @@ public:
 	int batch_size, channels;
 	int input_rows, input_cols, output_rows, output_cols;
 	float learning_rate;
-	float *X, *W1, *b1, *W2, *b2, *H, *Hrelu, *O, *SO, *dSO, *dO, *dW1, *db1, *dW2, *db2, *dH, *dHrelu;
 	float *IO;
 	float *y;
 	float *onevec;
@@ -233,19 +233,21 @@ public:
 	cudnnActivationDescriptor_t Reludesc;
 	// cudnnOpTensorDescriptor_t Adddesc, Muldesc;
 
-	cudnnHandle_t cudnnHandle;
+	cudnnHandle_t cudnn_handle;
 	curandGenerator_t curandgen;
 
 	float *h_W1, *h_W2, *h_b1, *h_b2, *h_SO, *h_y;
 	float eps;
 
 	// conv
-	cudnnTensorDescriptor_t inputTensor, conv1OTensor, conv1bTensor;
-	cudnnFilterDescriptor_t conv1Tensor;
-	cudnnConvolutionDescriptor_t conv1Desc;
-	cudnnConvolutionFwdAlgo_t conv1fAlgo;
-	cudnnConvolutionBwdFilterAlgo_t conv1bfAlgo;
-	size_t workspace_bytes;
+	cudnnTensorDescriptor_t input_tensor, output_tensor, bias_tensor, pooling_output_tensor;
+	cudnnFilterDescriptor_t filter_desc;
+	cudnnConvolutionDescriptor_t conv_desc;
+	cudnnActivationDescriptor_t actv_desc;
+	cudnnPoolingDescriptor_t pool_desc;
+	cudnnConvolutionFwdAlgo_t conv_fwd_algo;
+	cudnnConvolutionBwdFilterAlgo_t conv_bwdf_algo;
+	size_t workspace_size;
 	float *workspace;
 	float *conv1O, *conv1OA;
 	float *conv1filter, *conv1bias;
@@ -259,30 +261,34 @@ public:
 	cudnnConvolutionBwdFilterAlgoPerf_t *conv1bwdfperf;
 	cudnnConvolutionBwdDataAlgoPerf_t *conv1bwddperf;
 
-	Context(int input_size, int batch_size, int hidden_size, float learning_rate, int output_size) {
+	Context(int input_size, int batch_size, int hidden_size, float learning_rate, int output_size, int filter_size) {
 		this->batch_size = batch_size;
 		this->hidden_size = hidden_size;
 		this->output_size = output_size;				// number of classes;
 		this->channels = 1;
 		
-		input_rows = 224;
-		input_cols = 224;
-		input_feature = 64;
-		output_rows = 224;
-		output_cols = 224;
-		output_feature = 64;
-		filter_height = 3, filter_width = 3;
+		this->batch_size = batch_size = 128;
+		input_rows = 112;
+		input_cols = 112;
+		input_feature = 128;
+		output_rows = 112;
+		output_cols = 112;
+		output_feature = 128;
+		filter_height = filter_size, filter_width = filter_size;
+		int pad_h = filter_size / 2, pad_w = filter_size / 2, u = 1, v = 1, dilation_h = 1, dilation_w = 1;
 		this->input_size = input_rows * input_cols * input_feature;
 		cout << "input_size: " << this->input_size << endl;
-		input_size_fc = output_rows * output_cols * output_feature;
+		// input_size_fc = output_rows * output_cols * output_feature;
 		this->learning_rate = learning_rate;
 		eps = 1e-8;
-		workspace_bytes = 0;
+		workspace_size = 0;
 		workspace = NULL;
 
+		// find time for conv or pool
+		bool conv_test = false;
 
 		checkCUBLAS(cublasCreate(&cublasHandle));
-		checkCUDNN(cudnnCreate(&cudnnHandle));
+		checkCUDNN(cudnnCreate(&cudnn_handle));
 		checkCURAND(curandCreateGenerator(&curandgen, CURAND_RNG_PSEUDO_DEFAULT));
 
 		//vdnn
@@ -292,211 +298,177 @@ public:
 		conv1bwddperf = (cudnnConvolutionBwdDataAlgoPerf_t *)malloc(req_algo_count * sizeof(cudnnConvolutionBwdDataAlgoPerf_t));
 
 		// conv
-		checkCUDNN(cudnnCreateTensorDescriptor(&inputTensor));
-		checkCUDNN(cudnnCreateTensorDescriptor(&conv1OTensor));
-		checkCUDNN(cudnnCreateTensorDescriptor(&conv1bTensor));
-		checkCUDNN(cudnnCreateFilterDescriptor(&conv1Tensor));
-		checkCUDNN(cudnnSetTensor4dDescriptor(inputTensor, CUDNN_TENSOR_NCHW, CUDNN_DATA_FLOAT, batch_size, input_feature, input_rows, input_cols));
-		checkCUDNN(cudnnSetTensor4dDescriptor(conv1OTensor, CUDNN_TENSOR_NCHW, CUDNN_DATA_FLOAT, batch_size, output_feature, output_rows, output_cols));
-		checkCUDNN(cudnnSetTensor4dDescriptor(conv1bTensor, CUDNN_TENSOR_NCHW, CUDNN_DATA_FLOAT, 1, output_feature, 1, 1));
+		checkCUDNN(cudnnCreateTensorDescriptor(&input_tensor));
+		checkCUDNN(cudnnCreateTensorDescriptor(&output_tensor));
+		checkCUDNN(cudnnCreateTensorDescriptor(&bias_tensor));
+		checkCUDNN(cudnnCreateFilterDescriptor(&filter_desc));
+		checkCUDNN(cudnnSetTensor4dDescriptor(input_tensor, CUDNN_TENSOR_NCHW, CUDNN_DATA_FLOAT, batch_size, input_feature, input_rows, input_cols));
+		checkCUDNN(cudnnSetTensor4dDescriptor(output_tensor, CUDNN_TENSOR_NCHW, CUDNN_DATA_FLOAT, batch_size, output_feature, output_rows, output_cols));
+		checkCUDNN(cudnnSetTensor4dDescriptor(bias_tensor, CUDNN_TENSOR_NCHW, CUDNN_DATA_FLOAT, 1, output_feature, 1, 1));
 
-		checkCUDNN(cudnnSetFilter4dDescriptor(conv1Tensor, CUDNN_DATA_FLOAT, CUDNN_TENSOR_NCHW,
+		checkCUDNN(cudnnSetFilter4dDescriptor(filter_desc, CUDNN_DATA_FLOAT, CUDNN_TENSOR_NCHW,
 											 output_feature, input_feature, filter_height, filter_width));
 
-		checkCUDNN(cudnnCreateConvolutionDescriptor(&conv1Desc));
-		int pad_h = 1, pah_w = 1, u = 1, v = 1, dilation_h = 1, dilation_w = 1;
-		checkCUDNN(cudnnSetConvolution2dDescriptor(conv1Desc, pad_h, pah_w, u, v, dilation_h, dilation_w,
+		checkCUDNN(cudnnCreateConvolutionDescriptor(&conv_desc));
+		
+		checkCUDNN(cudnnSetConvolution2dDescriptor(conv_desc, pad_h, pad_w, u, v, dilation_h, dilation_w,
 													CUDNN_CROSS_CORRELATION, CUDNN_DATA_FLOAT));
+
+		checkCUDNN(cudnnCreateActivationDescriptor(&actv_desc));
+		checkCUDNN(cudnnSetActivationDescriptor(actv_desc, CUDNN_ACTIVATION_RELU, CUDNN_PROPAGATE_NAN, 1e-8));
+
+		int pooling_output_rows, pooling_output_cols;
+		if (!conv_test) {
+			checkCUDNN(cudnnCreatePoolingDescriptor(&pool_desc));
+			u = v = 2;
+			filter_height = filter_width = 2;
+			pad_h = pad_w = 0;
+			pooling_output_rows = (input_rows + 2 * pad_w - filter_width) / u, pooling_output_cols = (input_cols + 2 * pad_h - filter_height) / v;
+			checkCUDNN(cudnnSetPooling2dDescriptor(pool_desc, CUDNN_POOLING_MAX, CUDNN_PROPAGATE_NAN,
+													filter_height, filter_width,
+													pad_h, pad_w,
+													u, v));
+			checkCUDNN(cudnnCreateTensorDescriptor(&pooling_output_tensor));
+			checkCUDNN(cudnnSetTensor4dDescriptor(pooling_output_tensor, CUDNN_TENSOR_NCHW, CUDNN_DATA_FLOAT, batch_size, input_feature, pooling_output_rows, pooling_output_cols));
+		}
 
 		int ret_algo_count;
 		int n;
 		// cout << "waiting..\n";
 		// cin >> n;
-		checkCUDNN(cudnnFindConvolutionForwardAlgorithm(cudnnHandle, inputTensor, conv1Tensor, conv1Desc, conv1OTensor,
-													 req_algo_count, &ret_algo_count, conv1fwdperf));
-		cout << "Printing forward conv algo perf\n";
-		cout << "CUDNN_CONVOLUTION_FWD_ALGO_IMPLICIT_GEMM " << CUDNN_CONVOLUTION_FWD_ALGO_IMPLICIT_GEMM << endl;
-		cout << "CUDNN_CONVOLUTION_FWD_ALGO_IMPLICIT_PRECOMP_GEMM " << CUDNN_CONVOLUTION_FWD_ALGO_IMPLICIT_PRECOMP_GEMM << endl;
-		cout << "CUDNN_CONVOLUTION_FWD_ALGO_GEMM " << CUDNN_CONVOLUTION_FWD_ALGO_GEMM << endl;
-		cout << "CUDNN_CONVOLUTION_FWD_ALGO_DIRECT " << CUDNN_CONVOLUTION_FWD_ALGO_DIRECT << endl;
-		cout << "CUDNN_CONVOLUTION_FWD_ALGO_FFT " << CUDNN_CONVOLUTION_FWD_ALGO_FFT << endl;
-		cout << "CUDNN_CONVOLUTION_FWD_ALGO_FFT_TILING " << CUDNN_CONVOLUTION_FWD_ALGO_FFT_TILING << endl;
-		cout << "CUDNN_CONVOLUTION_FWD_ALGO_WINOGRAD " << CUDNN_CONVOLUTION_FWD_ALGO_WINOGRAD << endl;
-		cout << "CUDNN_CONVOLUTION_FWD_ALGO_WINOGRAD_NONFUSED " << CUDNN_CONVOLUTION_FWD_ALGO_WINOGRAD_NONFUSED << endl;
-		for (int i = 0; i < ret_algo_count; i++) {
-			cout << i << endl;
-			cout << "algo: " << conv1fwdperf[i].algo << endl;
-			cout << "status: " << cudnnGetErrorString(conv1fwdperf[i].status) << endl;
-			cout << "time(ms): " << conv1fwdperf[i].time << endl;
-			cout << "memory(bytes): " << conv1fwdperf[i].memory << endl;
-			cout << "mathType: " << conv1fwdperf[i].mathType << endl;
-			cout << endl;
+		if (conv_test) {
+			checkCUDNN(cudnnFindConvolutionForwardAlgorithm(cudnn_handle, input_tensor, filter_desc, conv_desc, output_tensor,
+															 req_algo_count, &ret_algo_count, conv1fwdperf));
+			cerr << "Printing forward conv algo perf\n";
+			cerr << "CUDNN_CONVOLUTION_FWD_ALGO_IMPLICIT_GEMM " << CUDNN_CONVOLUTION_FWD_ALGO_IMPLICIT_GEMM << endl;
+			cerr << "CUDNN_CONVOLUTION_FWD_ALGO_IMPLICIT_PRECOMP_GEMM " << CUDNN_CONVOLUTION_FWD_ALGO_IMPLICIT_PRECOMP_GEMM << endl;
+			cerr << "CUDNN_CONVOLUTION_FWD_ALGO_GEMM " << CUDNN_CONVOLUTION_FWD_ALGO_GEMM << endl;
+			cerr << "CUDNN_CONVOLUTION_FWD_ALGO_DIRECT " << CUDNN_CONVOLUTION_FWD_ALGO_DIRECT << endl;
+			cerr << "CUDNN_CONVOLUTION_FWD_ALGO_FFT " << CUDNN_CONVOLUTION_FWD_ALGO_FFT << endl;
+			cerr << "CUDNN_CONVOLUTION_FWD_ALGO_FFT_TILING " << CUDNN_CONVOLUTION_FWD_ALGO_FFT_TILING << endl;
+			cerr << "CUDNN_CONVOLUTION_FWD_ALGO_WINOGRAD " << CUDNN_CONVOLUTION_FWD_ALGO_WINOGRAD << endl;
+			cerr << "CUDNN_CONVOLUTION_FWD_ALGO_WINOGRAD_NONFUSED " << CUDNN_CONVOLUTION_FWD_ALGO_WINOGRAD_NONFUSED << endl;
+			for (int i = 0; i < ret_algo_count; i++) {
+				cerr << i << endl;
+				cerr << "algo: " << conv1fwdperf[i].algo << endl;
+				cerr << "status: " << cudnnGetErrorString(conv1fwdperf[i].status) << endl;
+				cerr << "time(ms): " << conv1fwdperf[i].time << endl;
+				cerr << "memory(bytes): " << conv1fwdperf[i].memory << endl;
+				cerr << "mathType: " << conv1fwdperf[i].mathType << endl;
+				cerr << endl;
+			}
+			conv_fwd_algo = conv1fwdperf[0].algo;
+			workspace_size = conv1fwdperf[0].memory;
 		}
 
-		checkCUDNN(cudnnFindConvolutionBackwardFilterAlgorithm(cudnnHandle, inputTensor, conv1OTensor, conv1Desc, conv1Tensor,
-																req_algo_count, &ret_algo_count, conv1bwdfperf));
-
-		cout << "Printing bwdfilter conv algo perf\n";
-		for (int i = 0; i < ret_algo_count; i++) {
-			cout << i << endl;
-			cout << "algo: " << conv1bwdfperf[i].algo << endl;
-			cout << "status: " << cudnnGetErrorString(conv1bwdfperf[i].status) << endl;
-			cout << "time(ms): " << conv1bwdfperf[i].time << endl;
-			cout << "memory(bytes): " << conv1bwdfperf[i].memory << endl;
-			cout << "mathType: " << conv1bwdfperf[i].mathType << endl;
-			cout << endl;
-		}
-
-		checkCUDNN(cudnnFindConvolutionBackwardDataAlgorithm(cudnnHandle, conv1Tensor, conv1OTensor, conv1Desc, inputTensor,
-																req_algo_count, &ret_algo_count, conv1bwddperf));
-
-		cout << "Printing bwddata conv algo perf\n";
-		for (int i = 0; i < ret_algo_count; i++) {
-			cout << i << endl;
-			cout << "algo: " << conv1bwdfperf[i].algo << endl;
-			cout << "status: " << cudnnGetErrorString(conv1bwdfperf[i].status) << endl;
-			cout << "time(ms): " << conv1bwdfperf[i].time << endl;
-			cout << "memory(bytes): " << conv1bwdfperf[i].memory << endl;
-			cout << "mathType: " << conv1bwdfperf[i].mathType << endl;
-			cout << endl;
-		}
-
+		// {
+		// 	int n;
+		// 	cout << "waiting..\n";
+		// 	cin >> n;
+		// }
 		float alpha = 1.0, beta = 0.0;
-		{
-			int n;
-			cout << "waiting..\n";
-			cin >> n;
-		}
-		void *layer_input, *dlayer_output, *workspace, *dW;
+
+		void *layer_input, *layer_output, *workspace, *W, *b, *pooling_layer_output;
 		checkCudaErrors(cudaMalloc(&layer_input, batch_size * input_feature * input_rows * input_cols * sizeof(float)));
-		checkCudaErrors(cudaMalloc(&dlayer_output, batch_size * output_feature * input_rows * input_cols * sizeof(float)));
-		checkCudaErrors(cudaMalloc(&dW, output_feature * input_feature * filter_height * filter_width * sizeof(float)));
-		checkCudaErrors(cudaMalloc(&workspace, conv1bwdfperf[0].memory));
-		checkCUDNN(cudnnConvolutionBackwardFilter(cudnnHandle, 
-													&alpha, 
-													inputTensor, layer_input,
-													conv1OTensor, dlayer_output,
-													conv1Desc, 
-													conv1bwdfperf[0].algo, 
-													workspace, conv1bwdfperf[0].memory, 
-													&beta,
-													conv1Tensor, dW));
-		{
-			int n;
-			cout << "waiting..\n";
-			cin >> n;
+		checkCudaErrors(cudaMalloc(&layer_output, batch_size * output_feature * output_rows * output_cols * sizeof(float)));
+		checkCudaErrors(cudaMalloc(&W, output_feature * input_feature * filter_height * filter_width * sizeof(float)));
+		checkCudaErrors(cudaMalloc(&b, 1 * output_feature * 1 * 1 * sizeof(float)));
+		checkCudaErrors(cudaMalloc(&workspace, workspace_size));
+		checkCudaErrors(cudaMalloc(&pooling_layer_output, batch_size * input_feature * pooling_output_rows * pooling_output_cols * sizeof(float)));
+
+		int n_iters = 100;
+		cudaEvent_t start, stop;
+		checkCudaErrors(cudaEventCreate(&start));
+		checkCudaErrors(cudaEventCreate(&stop));
+
+		if (!conv_test) {
+			std::vector<float> pool_compute_times;
+			for (int i = 0; i < n_iters; i++) {
+				float milli = 0;
+				checkCudaErrors(cudaEventRecord(start));
+				checkCUDNN(cudnnPoolingForward(cudnn_handle, pool_desc,
+												&alpha,
+												input_tensor, layer_input,
+												&beta,
+												pooling_output_tensor, pooling_layer_output));
+
+				checkCudaErrors(cudaEventRecord(stop));
+				checkCudaErrors(cudaEventSynchronize(stop));
+				checkCudaErrors(cudaEventElapsedTime(&milli, start, stop));
+				pool_compute_times.push_back(milli);
+			}
+			fstream f_pool_compute;
+			f_pool_compute.open("pool_compute_time.dat", ios_base::out);
+			for (int i = 0; i < n_iters; i++) {
+				f_pool_compute << pool_compute_times[i] << endl;
+			}
+			f_pool_compute.close();
+			exit(0);
 		}
+
+		std::vector<float> compute_times;
+		for (int i = 0; i < n_iters; i++) {
+			float milli = 0;
+			checkCudaErrors(cudaEventRecord(start));
+
+			checkCUDNN(cudnnConvolutionForward(cudnn_handle, &alpha, 
+												input_tensor, layer_input,
+												filter_desc, W,
+												conv_desc, conv_fwd_algo,
+												workspace, workspace_size,
+												&beta,
+												output_tensor, layer_output));
+			checkCUDNN(cudnnAddTensor(cudnn_handle, &alpha, 
+										bias_tensor, b, 
+										&alpha,
+										output_tensor, layer_output));
+
+			checkCUDNN(cudnnActivationForward(cudnn_handle, actv_desc,
+												&alpha,
+												output_tensor, layer_output,
+												&beta,
+												output_tensor, layer_output));
+
+			checkCudaErrors(cudaEventRecord(stop));
+			checkCudaErrors(cudaEventSynchronize(stop));
+			checkCudaErrors(cudaEventElapsedTime(&milli, start, stop));
+			compute_times.push_back(milli);
+		}
+
+		void *h_layer_input;
+		checkCudaErrors(cudaMallocHost(&h_layer_input, batch_size * input_feature * input_rows * input_cols * sizeof(float)));
+		std::vector<float> transfer_times;
+		for (int i = 0; i < n_iters; i++) {
+			float milli;
+			checkCudaErrors(cudaEventRecord(start));			
+			checkCudaErrors(cudaMemcpyAsync(h_layer_input, layer_input, batch_size * input_feature * input_rows * input_cols * sizeof(float), cudaMemcpyDeviceToHost, NULL));
+			checkCudaErrors(cudaEventRecord(stop));
+			checkCudaErrors(cudaEventSynchronize(stop));
+			checkCudaErrors(cudaEventElapsedTime(&milli, start, stop));
+			transfer_times.push_back(milli);
+		}
+
+		fstream f_compute;
+		fstream f_transfer;
+		char filter_char[10];
+		sprintf(filter_char, "%d", filter_size);
+		std::string compute_filename = "compute_time_";
+		std::string transfer_filename = "transfer_time_";
+		compute_filename.append(filter_char);
+		compute_filename.append(".dat");
+		transfer_filename.append(filter_char);
+		transfer_filename.append(".dat");
+		f_compute.open(compute_filename.c_str(), ios_base::out);
+		f_transfer.open(transfer_filename.c_str(), ios_base::out);
+		for (int i = 0; i < n_iters; i++) {
+			f_compute << compute_times[i] << std::endl;
+			f_transfer << transfer_times[i] << std::endl;
+		}
+		f_compute.close();
+		f_transfer.close();
+
 		exit(0);
-		// checkCUDNN(cudnnGetConvolutionForwardAlgorithm(cudnnHandle, inputTensor, conv1Tensor, conv1Desc, conv1OTensor,
-		// 												CUDNN_CONVOLUTION_FWD_PREFER_FASTEST, 0, &conv1fAlgo));
-		// size_t fwd_wspace;
-		// checkCUDNN(cudnnGetConvolutionForwardWorkspaceSize(cudnnHandle, inputTensor, conv1Tensor, conv1Desc, conv1OTensor,
-		// 													conv1fAlgo, &fwd_wspace));
-		// cout << "fwd_wspace: " << fwd_wspace << endl;
-		// cout << "algo_used: " << conv1fAlgo << endl;
-		// // exit(0);
-		// workspace_bytes = max(workspace_bytes, fwd_wspace);
-
-		// checkCudaErrors(cudaMalloc((void **)&conv1filter, filter_height * filter_width * input_feature * output_feature * sizeof(float) + sizeof(float)));
-		// checkCudaErrors(cudaMalloc((void **)&dconv1filter, filter_height * filter_width * input_feature * output_feature * sizeof(float)));
-		// checkCudaErrors(cudaMalloc((void **)&conv1bias, output_feature * sizeof(float)));
-		// checkCudaErrors(cudaMalloc((void **)&dconv1bias, output_feature * sizeof(float)));
-		// fillValue<<<ceil(1.0 * output_feature / BW), BW>>>(conv1bias, output_feature, 0);
-		// checkCURAND(curandGenerateNormal(curandgen, conv1filter, filter_height * filter_width * input_feature * output_feature + 1,
-		// 								0, 1 / sqrt(filter_height * filter_width * input_feature)));
-
-		// checkCudaErrors(cudaMalloc((void **)&conv1O, batch_size * input_size_fc * sizeof(float)));
-		checkCudaErrors(cudaMalloc((void **)&conv1OA, batch_size * input_size_fc * sizeof(float)));
-		// checkCudaErrors(cudaMalloc((void **)&dconv1O, batch_size * input_size_fc * sizeof(float)));
-		// checkCudaErrors(cudaMalloc((void **)&dconv1OA, batch_size * input_size_fc * sizeof(float)));
-
-		// checkCUDNN(cudnnGetConvolutionBackwardFilterAlgorithm(cudnnHandle, inputTensor, conv1OTensor, conv1Desc, conv1Tensor,
-		// 												CUDNN_CONVOLUTION_BWD_FILTER_PREFER_FASTEST, 0, &conv1bfAlgo));
-
-		// size_t bwd_fwspace;
-		// checkCUDNN(cudnnGetConvolutionBackwardFilterWorkspaceSize(cudnnHandle, inputTensor, conv1OTensor, conv1Desc, conv1Tensor,
-		// 															conv1bfAlgo, &bwd_fwspace));
-		// workspace_bytes = max(workspace_bytes, bwd_fwspace);
-		// if (workspace_bytes > 0)
-		// 	checkCudaErrors(cudaMalloc((void **)&workspace, workspace_bytes));
-
-
-		// // allocate memory in device
-		// checkCudaErrors(cudaMalloc((void **)&X, batch_size * input_size * sizeof(float)));
-		// checkCudaErrors(cudaMalloc((void **)&W1, input_size_fc * hidden_size * sizeof(float)));
-		// checkCudaErrors(cudaMalloc((void **)&dW1, input_size_fc * hidden_size * sizeof(float)));
-		// checkCudaErrors(cudaMalloc((void **)&b1, hidden_size * sizeof(float)));
-		// checkCudaErrors(cudaMalloc((void **)&db1, hidden_size * sizeof(float)));
-		// checkCudaErrors(cudaMalloc((void **)&W2, hidden_size * output_size * sizeof(float)));
-		// checkCudaErrors(cudaMalloc((void **)&dW2, hidden_size * output_size * sizeof(float)));
-		// checkCudaErrors(cudaMalloc((void **)&b2, output_size * sizeof(float)));
-		// checkCudaErrors(cudaMalloc((void **)&db2, output_size * sizeof(float)));
-		// checkCudaErrors(cudaMalloc((void **)&H, batch_size * hidden_size * sizeof(float)));
-		// checkCudaErrors(cudaMalloc((void **)&dH, batch_size * hidden_size * sizeof(float)));
-		// checkCudaErrors(cudaMalloc((void **)&Hrelu, batch_size * hidden_size * sizeof(float)));
-		// checkCudaErrors(cudaMalloc((void **)&dHrelu, batch_size * hidden_size * sizeof(float)));
-		// checkCudaErrors(cudaMalloc((void **)&O, batch_size * output_size * sizeof(float)));
-		// checkCudaErrors(cudaMalloc((void **)&IO, batch_size * sizeof(float)));
-		// checkCudaErrors(cudaMalloc((void **)&dO, batch_size * output_size * sizeof(float)));
-		// checkCudaErrors(cudaMalloc((void **)&SO, batch_size * output_size * sizeof(float)));
-		// checkCudaErrors(cudaMalloc((void **)&dSO, batch_size * output_size * sizeof(float)));
-		// checkCudaErrors(cudaMalloc((void **)&y, batch_size * sizeof(float)));
-		// checkCudaErrors(cudaMalloc((void **)&onevec, batch_size * sizeof(float)));
-		// fillValue<<<ceil(1.0 * batch_size / BW), BW>>>(onevec, batch_size, 1);
-
-		// // {
-		// // 	cout << "waiting..\n";
-		// // 	int n;
-		// // 	cin >> n;
-		// // }
-		// // h_IO = (float *)malloc(batch_size * sizeof(float));
-
-		// // checkCUDNN(cudnnCreateTensorDescriptor(&batchTensor));
-		// // checkCUDNN(cudnnCreateTensorDescriptor(&W1Tensor));
-		// // checkCUDNN(cudnnCreateTensorDescriptor(&b1Tensor));
-		// // checkCUDNN(cudnnCreateTensorDescriptor(&W2Tensor));
-		// // checkCUDNN(cudnnCreateTensorDescriptor(&b2Tensor));
-		// checkCUDNN(cudnnCreateTensorDescriptor(&HTensor));
-		// checkCUDNN(cudnnCreateTensorDescriptor(&OTensor));
-		// checkCUDNN(cudnnCreateActivationDescriptor(&Reludesc));
-		// // checkCUDNN(cudnnCreateOpTensorDescriptor(&Opdesc));
-
-
-		// // checkCUDNN(cudnnSetTensor4dDescriptor(batchTensor, CUDNN_TENSOR_NCHW, CUDNN_DATA_FLOAT, batch_size, rows * cols, 1, 1));
-
-		// // // just to be able to multiply properly
-		// // checkCUDNN(cudnnSetTensor4dDescriptor(W1Tensor, CUDNN_TENSOR_NCHW, CUDNN_DATA_FLOAT, batch_size, hidden_size, 1, 1));
-		// // checkCUDNN(cudnnSetTensor4dDescriptor(b1Tensor, CUDNN_TENSOR_NCHW, CUDNN_DATA_FLOAT, 1, hidden_size, 1, 1));
-
-		// checkCUDNN(cudnnSetTensor4dDescriptor(HTensor, CUDNN_TENSOR_NCHW, CUDNN_DATA_FLOAT, batch_size, hidden_size, 1, 1));
-
-		// // // just to be able to multiply properly
-		// // checkCUDNN(cudnnSetTensor4dDescriptor(W2Tensor, CUDNN_TENSOR_NCHW, CUDNN_DATA_FLOAT, hidden_size, output_size, 1, 1));
-		// // checkCUDNN(cudnnSetTensor4dDescriptor(b2Tensor, CUDNN_TENSOR_NCHW, CUDNN_DATA_FLOAT, 1, output_size, 1, 1));
-
-		// checkCUDNN(cudnnSetTensor4dDescriptor(OTensor, CUDNN_TENSOR_NCHW, CUDNN_DATA_FLOAT, batch_size, output_size, 1, 1));
-
-		// checkCUDNN(cudnnSetActivationDescriptor(Reludesc, CUDNN_ACTIVATION_RELU, CUDNN_PROPAGATE_NAN, 0));
-
-		// // initialization
-		// fillValue<<<ceil(1.0 * hidden_size / BW), BW>>>(b1, hidden_size, 0);
-		// fillValue<<<ceil(1.0 * output_size / BW), BW>>>(b2, output_size, 0);
-
-
-		// checkCURAND(curandGenerateNormal(curandgen, W1, input_size_fc * hidden_size, 0, 0.1));
-		// checkCURAND(curandGenerateNormal(curandgen, W2, hidden_size * output_size, 0, 0.1));
-
-		// checkCURAND(curandGenerateNormal(curandgen, conv1OA, batch_size * input_size_fc, 0, 0.1));
-
-		// h_W1 = (float *)malloc(input_size_fc * hidden_size * sizeof(float));
-		// h_W2 = (float *)malloc(hidden_size * output_size * sizeof(float));
-		// h_b1 = (float *)malloc(hidden_size * sizeof(float));
-		// h_b2 = (float *)malloc(output_size * sizeof(float));
-		// h_SO = (float *)malloc(batch_size * output_size * sizeof(float));
-		// h_y = (float *)malloc(batch_size * sizeof(float));
-
 		
-
 
 	}
 
@@ -504,419 +476,17 @@ public:
 		checkCUBLAS(cublasDestroy(cublasHandle));
 		checkCURAND(curandDestroyGenerator(curandgen));
 
-		// checkCudaErrors(cudaFree(X));
-		// checkCudaErrors(cudaFree(W1));
-		// checkCudaErrors(cudaFree(dW1));
-		// checkCudaErrors(cudaFree(b1));
-		// checkCudaErrors(cudaFree(db1));
-		// checkCudaErrors(cudaFree(W2));
-		// checkCudaErrors(cudaFree(dW2));
-		// checkCudaErrors(cudaFree(b2));
-		// checkCudaErrors(cudaFree(db2));
-		// checkCudaErrors(cudaFree(H));
-		// checkCudaErrors(cudaFree(dH));
-		// checkCudaErrors(cudaFree(Hrelu));
-		// checkCudaErrors(cudaFree(dHrelu));
-		// checkCudaErrors(cudaFree(O));
-		// checkCudaErrors(cudaFree(dO));
-		// checkCudaErrors(cudaFree(SO));
-		// checkCudaErrors(cudaFree(dSO));
-		// checkCudaErrors(cudaFree(IO));
-		// free(h_IO);
-		// checkCUDNN(cudnnDestroyActivationDescriptor(Reludesc));
-		// // checkCUDNN(cudnnDestroyTensorDescriptor(batchTensor));
-		// // checkCUDNN(cudnnDestroyTensorDescriptor(W1Tensor));
-		// // checkCUDNN(cudnnDestroyTensorDescriptor(b1Tensor));
-		// // checkCUDNN(cudnnDestroyTensorDescriptor(W2Tensor));
-		// // checkCUDNN(cudnnDestroyTensorDescriptor(b2Tensor));
-		// checkCUDNN(cudnnDestroyTensorDescriptor(HTensor));
-		// checkCUDNN(cudnnDestroyTensorDescriptor(OTensor));
-		// checkCUDNN(cudnnDestroy(cudnnHandle));
-
-		
-
-		// free(h_W1);
-		// free(h_W2);
-		// free(h_b1);
-		// free(h_b2);
-		// free(h_SO);
-		// free(h_y);
-
-		// // conv
-		// checkCUDNN(cudnnDestroyFilterDescriptor(conv1Tensor));
-
 	}
 
 	void forwardPropagate(bool train=true) {
-		// float alpha = 1.0f, beta = 0.0f;
 		
-		// conv
-		// conv forward
-		cudaEvent_t start, stop;
-		float milli = 0;
-		checkCudaErrors(cudaEventCreate(&start));
-		checkCudaErrors(cudaEventCreate(&stop));
-
-		// // checkCudaErrors(cudaEventRecord(start));
-		// // checkCUDNN(cudnnConvolutionForward(cudnnHandle, &alpha, inputTensor, X, conv1Tensor, conv1filter, conv1Desc,
-		// // 									conv1fAlgo, workspace, workspace_bytes, &beta, conv1OTensor, conv1O));
-		// // checkCudaErrors(cudaEventRecord(stop));
-		// // checkCudaErrors(cudaEventSynchronize(stop));
-		// // checkCudaErrors(cudaEventElapsedTime(&milli, start, stop));
-		// // cout << "time for conv: " << milli << endl;
-		// // // add bias
-		// // checkCUDNN(cudnnAddTensor(cudnnHandle, &alpha, conv1bTensor, conv1bias, &alpha, conv1OTensor, conv1O));
-
-		// // // activation
-		// // checkCUDNN(cudnnActivationForward(cudnnHandle, Reludesc, &alpha, conv1OTensor, conv1O, &beta, conv1OTensor, conv1OA));
-
-		float *temp = NULL;
-		checkCudaErrors(cudaMallocHost((void **)&temp, batch_size * input_size_fc * sizeof(float)));
-		checkCudaErrors(cudaEventRecord(start));
-		checkCudaErrors(cudaMemcpyAsync(temp, conv1OA, batch_size * input_size_fc * sizeof(float), cudaMemcpyDeviceToHost));
-		checkCudaErrors(cudaEventRecord(stop));
-		cudaEventSynchronize(stop);
-		checkCudaErrors(cudaEventElapsedTime(&milli, start, stop));
-		cout << "transfer time(ms): " << milli << endl;
-		int n;
-		cin >> n;
-		for (int i = 0; i < n; i++) {
-			cout << temp[i];
-		}
-		// int n;
-		// cout << "waiting..\n";
-		// cin >> n;
-		exit(0);
-
-		// // multiply weights to input
-		// checkCudaErrors(cudaEventRecord(start));
-		// checkCUBLAS(cublasSgemm(cublasHandle, 
-		// 						CUBLAS_OP_N, CUBLAS_OP_N,
-		// 						hidden_size, batch_size, input_size_fc,
-		// 						&alpha,
-		// 						W1, hidden_size,
-		// 						conv1OA, input_size_fc,
-		// 						&beta,
-		// 						H, hidden_size));
-		// checkCudaErrors(cudaEventRecord(stop));
-		// checkCudaErrors(cudaEventSynchronize(stop));
-		// checkCudaErrors(cudaEventElapsedTime(&milli, start, stop));
-		// cout << "time for mul: " << milli << endl;
-		// // exit(0);
-		// // float *h_X = (float *)malloc(batch_size * input_size * sizeof(float));
-		// // checkCudaErrors(cudaMemcpy(h_X, X, batch_size * input_size * sizeof(float), cudaMemcpyDeviceToHost));
-		// // cout << "X:\n";
-		// // printMatrix(h_X, batch_size, input_size);
-		// // int n;
-		// // cout << "waiting..\n";
-		// // cin >> n;
-		
-		// // checkCudaErrors(cudaMemcpy(h_W1, W1, input_size * hidden_size * sizeof(float), cudaMemcpyDeviceToHost));
-		// // cout << "W1:\n";
-		// // printMatrix(h_W1, input_size, hidden_size);
-		// // cout << "waiting..\n";
-		// // cin >> n;
-
-		// // float *h_H = (float *)malloc(batch_size * hidden_size * sizeof(float));
-		// // checkCudaErrors(cudaMemcpy(h_H, H, batch_size * hidden_size * sizeof(float), cudaMemcpyDeviceToHost));
-		// // cout << "H:\n";
-		// // printMatrix(h_H, batch_size, hidden_size);
-		// // cout << "waiting..\n";
-		// // cin >> n;
-
-		// // add bias to output
-		// checkCUBLAS(cublasSgemm(cublasHandle,
-		// 						CUBLAS_OP_N, CUBLAS_OP_N,
-		// 						hidden_size, batch_size, 1,
-		// 						&alpha,
-		// 						b1, hidden_size,
-		// 						onevec, 1,
-		// 						&alpha,
-		// 						H, hidden_size));
-
-		// // checkCudaErrors(cudaMemcpy(h_b1, b1, hidden_size * sizeof(float), cudaMemcpyDeviceToHost));
-		// // cout << "b1:\n";
-		// // printMatrix(h_b1, 1, hidden_size);
-		// // cout << "waiting..\n";
-		// // cin >> n;
-
-		// // checkCudaErrors(cudaMemcpy(h_H, H, batch_size * hidden_size * sizeof(float), cudaMemcpyDeviceToHost));
-		// // cout << "H+b:\n";
-		// // printMatrix(h_H, batch_size, hidden_size);
-		// // cout << "waiting..\n";
-		// // cin >> n;
-
-		// // apply relu activation
-		// checkCUDNN(cudnnActivationForward(cudnnHandle, Reludesc, &alpha, HTensor, H, &beta, HTensor, Hrelu));
-
-		// // checkCudaErrors(cudaMemcpy(h_H, Hrelu, batch_size * hidden_size * sizeof(float), cudaMemcpyDeviceToHost));
-		// // cout << "Hrelu:\n";
-		// // printMatrix(h_H, batch_size, hidden_size);
-		// // cout << "waiting..\n";
-		// // cin >> n;
-
-		// // multiply weights to input
-		// checkCUBLAS(cublasSgemm(cublasHandle, 
-		// 						CUBLAS_OP_N, CUBLAS_OP_N,
-		// 						output_size, batch_size, hidden_size,
-		// 						&alpha,
-		// 						W2, output_size,
-		// 						Hrelu, hidden_size,
-		// 						&beta,
-		// 						O, output_size));
 		
 
-		// // checkCudaErrors(cudaMemcpy(h_W2, W2, hidden_size * output_size * sizeof(float), cudaMemcpyDeviceToHost));
-		// // cout << "W2:\n";
-		// // printMatrix(h_W2, hidden_size, output_size);
-		// // cout << "waiting..\n";
-		// // cin >> n;
-
-
-		// // float *h_O = (float *)malloc(batch_size * output_size * sizeof(float));
-		// // checkCudaErrors(cudaMemcpy(h_O, O, batch_size * output_size * sizeof(float), cudaMemcpyDeviceToHost));
-		// // cout << "O:\n";
-		// // printMatrix(h_O, batch_size, output_size);
-		// // cout << "waiting..\n";
-		// // cin >> n;
-
-		// // add bias to output
-		// checkCUBLAS(cublasSgemm(cublasHandle,
-		// 						CUBLAS_OP_N, CUBLAS_OP_N,
-		// 						output_size, batch_size, 1,
-		// 						&alpha,
-		// 						b2, output_size,
-		// 						onevec, 1,
-		// 						&alpha,
-		// 						O, output_size));
-
-		// // checkCudaErrors(cudaMemcpy(h_b2, b2, output_size * sizeof(float), cudaMemcpyDeviceToHost));
-		// // cout << "b2:\n";
-		// // printMatrix(h_b2, 1, output_size);
-		// // cout << "waiting..\n";
-		// // cin >> n;
-
-		// // checkCudaErrors(cudaMemcpy(h_O, O, batch_size * output_size * sizeof(float), cudaMemcpyDeviceToHost));
-		// // cout << "O+b:\n";
-		// // printMatrix(h_O, batch_size, output_size);
-		// // cout << "waiting..\n";
-		// // cin >> n;
-
-		// if (train == false) {
-		// 	inferClass<<<ceil(1.0 * batch_size / BW), BW>>>(O, IO, batch_size, output_size);
-		// 	cudaMemcpy(h_IO, IO, batch_size * sizeof(float), cudaMemcpyDeviceToHost);
-		// 	return;
-		// }
-
-		// // float *sm_test = (float *)malloc(batch_size * output_size * sizeof(float));
-		// // for (int i = 0; i < batch_size; i++) {
-		// // 	for (int j = 0; j < output_size; j++) {
-		// // 		sm_test[i * output_size + j] = i * output_size + j;
-		// // 	}
-		// // }
-		// // cout << "sm_test:\n";
-		// // printMatrix(sm_test, batch_size, output_size);
-		// // checkCudaErrors(cudaMemcpy(O, sm_test, batch_size * output_size * sizeof(float), cudaMemcpyHostToDevice));
-		// // checkCudaErrors(cudaMemcpy(sm_test, O, batch_size * output_size * sizeof(float), cudaMemcpyDeviceToHost));
-		// // cout << "O:\n";
-		// // printMatrix(sm_test, batch_size, output_size);
-		// // apply softmax
-		// // checkCudaErrors(cudaMemcpy(h_SO, O, output_size * sizeof(float), cudaMemcpyDeviceToHost));
-		// // printMatrix(h_SO, batch_size, output_size);
-		// checkCudaErrors(cudaDeviceSynchronize());
-		// checkCUDNN(cudnnSoftmaxForward(cudnnHandle, CUDNN_SOFTMAX_ACCURATE, CUDNN_SOFTMAX_MODE_INSTANCE, &alpha, OTensor, O, &beta, OTensor, SO));
-		// checkCudaErrors(cudaDeviceSynchronize());
-		// // checkCudaErrors(cudaMemcpy(h_SO, SO, batch_size * output_size * sizeof(float), cudaMemcpyDeviceToHost));
-		// // cout << "SO:\n";
-		// // printMatrix(h_SO, batch_size, output_size);
-		// // cout << "waiting..\n";
-		// // cin >> n;
 		
-		// // checkCudaErrors(cudaMemcpy(h_SO, SO, batch_size * output_size * sizeof(float), cudaMemcpyDeviceToHost));
-		// // checkCudaErrors(cudaMemcpy(h_y, y, batch_size * sizeof(float), cudaMemcpyDeviceToHost));
-		// // float loss = 0;
-		// // for (int i = 0; i < batch_size; i++)
-		// // 	loss += -log(h_SO[i * output_size + int(h_y[i])]);
-		// // // getSoftmaxLoss<<<ceil(1.0 * batch_size / BW), BW>>>(SO, y, batch_size, output_size, &loss);
-		// // // printf("yay");
-		// // return loss;
 
 	}
 
-	// void backwardPropagate() {
-	// 	float alpha = 1.0f, beta = 0.0f;
-	// 	checkCudaErrors(cudaMemset(dSO, 0, batch_size * output_size * sizeof(float)));
-	// 	softmaxLossBackProp<<<ceil(1.0 * batch_size / BW), BW>>>(y, SO, dSO, batch_size, output_size, eps);
-	// 	// int n;
-	// 	// checkCudaErrors(cudaMemcpy(h_SO, dSO, batch_size * output_size * sizeof(float), cudaMemcpyDeviceToHost));
-	// 	// cout << "dSO:\n";
-	// 	// printMatrix(h_SO, batch_size, output_size);
-	// 	// cout << "waiting..\n";
-	// 	// cin >> n;
-
-	// 	// softmax backprop
-	// 	checkCUDNN(cudnnSoftmaxBackward(cudnnHandle, CUDNN_SOFTMAX_ACCURATE, CUDNN_SOFTMAX_MODE_INSTANCE, &alpha,
-	// 									OTensor, SO, OTensor, dSO,
-	// 									&beta,
-	// 									OTensor, dO));
-
-	// 	// checkCudaErrors(cudaMemcpy(h_SO, dO, batch_size * output_size * sizeof(float), cudaMemcpyDeviceToHost));
-	// 	// cout << "dO:\n";
-	// 	// printMatrix(h_SO, batch_size, output_size);
-	// 	// cout << "waiting..\n";
-	// 	// cin >> n;
-		
-	// 	// gradient w.r.t. b2
-	// 	checkCUBLAS(cublasSgemm(cublasHandle, 
-	// 							CUBLAS_OP_N, CUBLAS_OP_N,
-	// 							output_size, 1, batch_size,
-	// 							&alpha,
-	// 							dO, output_size,
-	// 							onevec, batch_size,
-	// 							&beta,
-	// 							db2, output_size));
-
-	// 	// checkCudaErrors(cudaMemcpy(h_b2, db2, output_size * sizeof(float), cudaMemcpyDeviceToHost));
-	// 	// cout << "db2:\n";
-	// 	// printMatrix(h_b2, 1, output_size);
-	// 	// cout << "waiting..\n";
-	// 	// cin >> n;
-
-	// 	// checkCudaErrors(cudaMemcpy(h_b2, db2, output_size * sizeof(float), cudaMemcpyDeviceToHost));
-	// 	// printMatrix(h_b2, 1, output_size);
-		
-	// 	checkCudaErrors(cudaDeviceSynchronize());
-
-
-	// 	// gradient w.r.t. W2
-	// 	checkCUBLAS(cublasSgemm(cublasHandle, 
-	// 							CUBLAS_OP_N, CUBLAS_OP_T,
-	// 							output_size, hidden_size, batch_size,
-	// 							&alpha,
-	// 							dO, output_size,
-	// 							Hrelu, hidden_size,
-	// 							&beta,
-	// 							dW2, output_size));
-
-	// 	// checkCudaErrors(cudaMemcpy(h_W2, dW2, hidden_size * output_size * sizeof(float), cudaMemcpyDeviceToHost));
-	// 	// cout << "dW2:\n";
-	// 	// printMatrix(h_W2, hidden_size, output_size);
-	// 	// cout << "waiting..\n";
-	// 	// cin >> n;		
-
-	// 	// gradient w.r.t. Hrelu
-	// 	checkCUBLAS(cublasSgemm(cublasHandle,
-	// 							CUBLAS_OP_T, CUBLAS_OP_N,
-	// 							hidden_size, batch_size, output_size,
-	// 							&alpha,
-	// 							W2, output_size,
-	// 							dO, output_size,
-	// 							&beta,
-	// 							dHrelu, hidden_size));
-
-	// 	// float *h_H = (float *)malloc(batch_size * hidden_size * sizeof(float));
-	// 	// checkCudaErrors(cudaMemcpy(h_H, dHrelu, batch_size * hidden_size * sizeof(float), cudaMemcpyDeviceToHost));
-	// 	// cout << "dHrelu:\n";
-	// 	// printMatrix(h_H, batch_size, hidden_size);
-	// 	// cout << "waiting..\n";
-	// 	// cin >> n;
-
-	// 	// gradient w.r.t H
-	// 	checkCUDNN(cudnnActivationBackward(cudnnHandle, Reludesc, &alpha, HTensor, Hrelu, HTensor, dHrelu,
-	// 										HTensor, H, &beta, HTensor, dH));
-
-
-	// 	// gradient w.r.t. b1
-	// 	checkCUBLAS(cublasSgemm(cublasHandle, 
-	// 							CUBLAS_OP_N, CUBLAS_OP_N,
-	// 							hidden_size, 1, batch_size,
-	// 							&alpha,
-	// 							dH, hidden_size,
-	// 							onevec, batch_size,
-	// 							&beta,
-	// 							db1, hidden_size));
-
-	// 	// gradient w.r.t. W1
-	// 	checkCUBLAS(cublasSgemm(cublasHandle, 
-	// 							CUBLAS_OP_N, CUBLAS_OP_T,
-	// 							hidden_size, input_size_fc, batch_size,
-	// 							&alpha,
-	// 							dH, hidden_size,
-	// 							conv1OA, input_size_fc,
-	// 							&beta,
-	// 							dW1, hidden_size));
-
-	// 	// gradient w.r.t. conv1OA
-	// 	checkCUBLAS(cublasSgemm(cublasHandle,
-	// 							CUBLAS_OP_T, CUBLAS_OP_N,
-	// 							input_size_fc, batch_size, hidden_size,
-	// 							&alpha,
-	// 							W1, hidden_size,
-	// 							dH, hidden_size,
-	// 							&beta,
-	// 							dconv1OA, input_size_fc));
-
-	// 	// gradient w.r.t conv1O
-	// 	checkCUDNN(cudnnActivationBackward(cudnnHandle, Reludesc, &alpha, conv1OTensor, conv1OA, conv1OTensor, dconv1OA,
-	// 										conv1OTensor, conv1O, &beta, conv1OTensor, dconv1O));
-
-	// 	// gradient w.r.t. conv1bias
-	// 	checkCUDNN(cudnnConvolutionBackwardBias(cudnnHandle, &alpha, conv1OTensor, dconv1O, &beta, conv1bTensor, dconv1bias));
-
-	// 	// gradient w.r.t. conv1filter
-	// 	checkCUDNN(cudnnConvolutionBackwardFilter(cudnnHandle, &alpha, inputTensor, X, conv1OTensor, dconv1O, conv1Desc,
-	// 												conv1bfAlgo, workspace, workspace_bytes, &beta, conv1Tensor, dconv1filter));
-
-
-
-	// }
-
-	// void updateWeights() {
-	// 	float alpha = -learning_rate;
-
-	// 	// update W1
-	// 	checkCUBLAS(cublasSaxpy(cublasHandle, input_size * hidden_size,
-	// 							&alpha,
-	// 							dW1, 1,
-	// 							W1, 1));
-
-	// 	//update b1
-	// 	checkCUBLAS(cublasSaxpy(cublasHandle, hidden_size,
-	// 							&alpha,
-	// 							db1, 1,
-	// 							b1, 1));
-
-	// 	// update W2
-	// 	checkCUBLAS(cublasSaxpy(cublasHandle, hidden_size * output_size,
-	// 							&alpha,
-	// 							dW2, 1,
-	// 							W2, 1));
-	// 	//update b2
-	// 	checkCUBLAS(cublasSaxpy(cublasHandle, output_size,
-	// 							&alpha,
-	// 							db2, 1,
-	// 							b2, 1));
-
-	// 	// update conv1bias
-	// 	checkCUBLAS(cublasSaxpy(cublasHandle, output_feature,
-	// 							&alpha,
-	// 							dconv1bias, 1,
-	// 							conv1bias, 1));
-
-	// 	// update conv1filter
-	// 	checkCUBLAS(cublasSaxpy(cublasHandle, output_feature * input_feature * filter_height * filter_width,
-	// 							&alpha,
-	// 							dconv1filter, 1,
-	// 							conv1filter, 1));
-
-	// 	// checkCudaErrors(cudaMemcpy(h_W1, W1, hidden_size * sizeof(float), cudaMemcpyDeviceToHost));
-	// 	// 	for (int i = 0; i < output_size; i++) {
-	// 	// 		cout << h_W2[i] << ' ';
-	// 	// 	}
-	// 	// 	cout << endl;
-	// 	// 	checkCudaErrors(cudaDeviceSynchronize());
-
-	// }
+	
 
 	void train(int num_iter, float *train_images, float *train_labels, float *test_images, float *test_labels, int N) {
 		// int image_size = rows * cols * channels;
@@ -924,25 +494,13 @@ public:
 		for (int iter = 0; iter < num_iter; iter++) {
 			int image_id = iter % (N / batch_size);
 
-			// checkCudaErrors(cudaMemcpy(h_W1, W1, input_size_fc * hidden_size * sizeof(float), cudaMemcpyDeviceToHost));
-			// checkCudaErrors(cudaMemcpy(h_W2, W2, hidden_size * output_size * sizeof(float), cudaMemcpyDeviceToHost));
-			// checkCudaErrors(cudaMemcpy(h_b1, b1, hidden_size * sizeof(float), cudaMemcpyDeviceToHost));
-			// checkCudaErrors(cudaMemcpy(h_b2, b2, output_size * sizeof(float), cudaMemcpyDeviceToHost));
-			
-			// checkCudaErrors(cudaMemcpy(X, &train_images[image_id * batch_size * input_size], input_size * batch_size * sizeof(float), cudaMemcpyHostToDevice));
-			// checkCudaErrors(cudaMemcpy(y, &train_labels[image_id * batch_size], batch_size * sizeof(float), cudaMemcpyHostToDevice));
 
 			this->forwardPropagate();
-			// this->backwardPropagate();
-			// this->updateWeights();
+			
 
 			checkCudaErrors(cudaDeviceSynchronize());
 			exit(0);
-			// checkCudaErrors(cudaMemcpy(h_W2, W2, hidden_size * output_size * sizeof(float), cudaMemcpyDeviceToHost));
-			// for (int i = 0; i < output_size; i++) {
-			// 	cout << h_W2[i] << ' ';
-			// }
-			// cout << endl;
+			
 			checkCudaErrors(cudaDeviceSynchronize());
 		}
 	}
@@ -955,8 +513,8 @@ public:
 		while (start < N) {
 			if (start + size >= N)
 				size = N - start;
-			checkCudaErrors(cudaMemcpy(X, &test_images[start * input_size], input_size * size * sizeof(float), cudaMemcpyHostToDevice));
-			checkCudaErrors(cudaMemcpy(y, &test_labels[start], size * sizeof(float), cudaMemcpyHostToDevice));
+			// checkCudaErrors(cudaMemcpy(X, &test_images[start * input_size], input_size * size * sizeof(float), cudaMemcpyHostToDevice));
+			// checkCudaErrors(cudaMemcpy(y, &test_labels[start], size * sizeof(float), cudaMemcpyHostToDevice));
 			this->forwardPropagate(false);
 			checkCudaErrors(cudaDeviceSynchronize());
 			for (int i = 0; i < size; i++) {
@@ -973,94 +531,24 @@ public:
 
 };
 
-int main() {
-	// vector<vector<uchar> > train_images, test_images;
-	// vector<uchar> train_labels, test_labels;
-	// readMNIST(train_images, test_images, train_labels, test_labels);
+int main(int argc, char *argv[]) {
 	float *f_train_images, *f_train_labels, *f_test_images, *f_test_labels;
 	int input_size = rows * cols * channels;
 	f_train_images = (float *)malloc(N_train * input_size * sizeof(float));
 	f_train_labels = (float *)malloc(N_train * sizeof(float));
 	f_test_images = (float *)malloc(N_test * input_size * sizeof(float));
 	f_test_labels = (float *)malloc(N_test * sizeof(float));
-	// checkCudaErrors(cudaMallocHost((void **)&f_train_images, N_train * input_size * sizeof(float)));
-	// checkCudaErrors(cudaMallocHost((void **)&f_train_labels, N_train * sizeof(float)));
-	// checkCudaErrors(cudaMallocHost((void **)&f_test_images, N_test * input_size * sizeof(float)));
-	// checkCudaErrors(cudaMallocHost((void **)&f_test_labels, N_test * sizeof(float)));
-
-	// float *mean_image;
-	// mean_image = (float *)malloc(input_size * sizeof(float));
-
-	// for (int k = 0; k < N_train; k++) {
-	// 	for (int j = 0; j < rows * cols; j++) {
-	// 		f_train_images[k * input_size + j] = (float)train_images[k][j];
-	// 	}
-	// 	f_train_labels[k] = (float)train_labels[k];
-	// }
-
-	// for (int k = 0; k < N_test; k++) {
-	// 	for (int j = 0; j < rows * cols; j++) {
-	// 		f_test_images[k * input_size + j] = (float)test_images[k][j];
-	// 	}
-	// 	f_test_labels[k] = (float)test_labels[k];
-	// }
-
-	// for (int i = 0; i < input_size; i++) {
-	// 	mean_image[i] = 0;
-	// 	for (int k = 0; k < N_train; k++) {
-	// 		mean_image[i] += f_train_images[k * input_size + i];
-	// 	}
-	// 	mean_image[i] /= N_train;
-	// }
-
-	// for (int i = 0; i < N_train; i++) {
-	// 	for (int j = 0; j < input_size; j++)
-	// 		f_train_images[i * input_size + j] -= mean_image[j];
-	// }
-
-	// for (int i = 0; i < N_test; i++) {
-	// 	for (int j = 0; j < input_size; j++)
-	// 		f_test_images[i * input_size + j] -= mean_image[j];
-	// }
-
-
-	// int toy_input_size = 2;
-	// int toy_hidden_size = 5;
-	// int toy_output_size = 2;
-	// int batch_size = 100;
-	// float *toy_train, *toy_train_labels;
-	// toy_train = (float *)malloc(batch_size * toy_input_size * sizeof(float));
-	// toy_train_labels = (float *)malloc(batch_size * sizeof(float));
-	// curandGenerator_t curandgen;
-	// checkCURAND(curandCreateGeneratorHost(&curandgen, CURAND_RNG_PSEUDO_DEFAULT));
-	// printf("toy_train, before init:\n");
-	// printMatrix(toy_train, batch_size, toy_input_size);
-	// checkCURAND(curandGenerateNormal(curandgen, toy_train, batch_size * toy_input_size * sizeof(float), 0, 10));
-	// printf("toy_train, after init:\n");
-	// printMatrix(toy_train, batch_size, toy_input_size);
-	// for (int i = 0; i < batch_size; i++) {
-	// 	cout << float(i % 2) << " p\n";
-	// 	toy_train_labels[i] = float(i % 2);
-	// }
-	// printf("toy_train_labels, after init\n");
-	// printMatrix(toy_train_labels, batch_size, 1);
-	// int n;
-	// cin >> n;
- 
-	// float toy_l_rate = 1e-1;
-	// Context context(toy_input_size, batch_size, toy_hidden_size, toy_l_rate, toy_output_size);
-	// int n_iter = 100;
-	// int n_rep = 10;
-	// for (int i = 0; i < n_rep; i++) {
-	// 	context.train(n_iter, toy_train, toy_train_labels, toy_train, toy_train_labels, batch_size);
-	// 	cout << context.test(toy_train, toy_train_labels, batch_size) << endl << flush;
-	// }
+	
 
 	float l_rate = 1e-3;
 	int hidden_size = 50;
 	int batch_size = 16;
 	int output_size = 10;
-	Context context(input_size, batch_size, hidden_size, l_rate, output_size);
+	int filter_size = 3;
+	if (argc >= 2) {
+		filter_size = atoi(argv[1]);
+	}
+	Context context(input_size, batch_size, hidden_size, l_rate, output_size, filter_size);
 	int n_iter = 10000;
 	int n_rep = 10;
 
