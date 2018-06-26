@@ -3,10 +3,12 @@
 #include <cstdlib>
 #include <vector>
 #include <cmath>
+#include <time.h>
 #define NUM_COMPRESSION_THREADS 8
 #define COMPRESSION_DISCRETIZATION_FACTOR 8
 #define COMPRESSION_BATCH_SIZE 32
 #define ALLOC_AND_COMPRESS 0
+#define FREE_DECOMPRESS_PARALLEL 0
 #define BYTE_SIZE 8
 
 using namespace std;
@@ -36,7 +38,7 @@ struct Position2dArray {
 };
 
 long layer_sizes_alexnet[] = {56l * 56 * 96, 28l * 28 * 96, 27l * 27 * 256, 13l * 13 * 256, 13l * 12 * 384, 13l * 12 * 384, 13l * 13 * 256, 6l * 6 * 256};
-bool layer_compress_alexnet[] = {false, false, true, false, true, true, true, true};
+bool layer_compress_alexnet[] = {true, true, true, true, true, true, true, true};
 long layer_density_alexnet[] = {50, 80, 40, 60, 70, 70, 30, 60};
 int num_layers_alexnet = 8;
 
@@ -107,8 +109,31 @@ int num_layers = num_layers_alexnet;
 void *compressThread(void *);
 void *decompressThread(void *);
 
-int main() {
+int main(int argc, char *argv[]) {
+
 	int batch_size = 128;
+	if (argc >= 2) {
+		if (strcmp(argv[1], "vgg") == 0) {
+			layer_sizes = layer_sizes_vgg;
+			layer_compress = layer_compress_vgg;
+			layer_density = layer_density_vgg;
+			num_layers = num_layers_vgg;
+		}
+		else if (strcmp(argv[1], "alexnet") == 0) {
+			layer_sizes = layer_sizes_alexnet;
+			layer_compress = layer_compress_alexnet;
+			layer_density = layer_density_alexnet;
+			num_layers = num_layers_alexnet;
+		}
+	}
+	if (argc >= 3) {
+		batch_size = atoi(argv[2]);
+	}
+	int num_iters = 100;
+	if (argc >= 4) {
+		num_iters = atoi(argv[3]);
+	}
+
 	for (int i = 0; i < num_layers; i++) {
 		layer_sizes[i] *= batch_size;
 	}
@@ -116,11 +141,11 @@ int main() {
 	CompressedData *compressed_data = (CompressedData *)malloc(num_layers * sizeof(CompressedData));
 	for (int i = 0; i < num_layers; i++) {
 		if (layer_compress[i]) {
-			cudaMallocHost((void **)&compressed_data[i].data, NUM_COMPRESSION_THREADS * sizeof(void **));
-			cudaMallocHost((void **)&compressed_data[i].slot_taken, NUM_COMPRESSION_THREADS * sizeof(bool *));
+			cudaMallocHost((void **)&(compressed_data[i].data), NUM_COMPRESSION_THREADS * sizeof(void **));
+			cudaMallocHost((void **)&(compressed_data[i].slot_taken), NUM_COMPRESSION_THREADS * sizeof(bool *));
 			for (int j = 0; j < NUM_COMPRESSION_THREADS; j++) {
-				cudaMallocHost((void **)&compressed_data[i].data[j], COMPRESSION_DISCRETIZATION_FACTOR * sizeof(void *));
-				cudaMallocHost((void **)&compressed_data[i].slot_taken[j], COMPRESSION_DISCRETIZATION_FACTOR * sizeof(bool));
+				cudaMallocHost((void **)&(compressed_data[i].data[j]), COMPRESSION_DISCRETIZATION_FACTOR * sizeof(void *));
+				cudaMallocHost((void **)&(compressed_data[i].slot_taken[j]), COMPRESSION_DISCRETIZATION_FACTOR * sizeof(bool));
 			}
 		}
 	}
@@ -189,124 +214,174 @@ int main() {
 		}
 	}
 	
-
+	vector<vector<float> > all_compression_times, all_decompression_times;
+	vector<vector<float> > all_compressed_sizes;
 	vector<float> compression_times, decompression_times;
+	vector<float> compressed_sizes;
 	cudaEvent_t start, stop;
 	cudaEventCreate(&start);
 	cudaEventCreate(&stop);
-	for (int i = 0; i < num_layers; i++) {
-		if (!layer_compress[i]) {
-			compression_times.push_back(0);
-			continue;
-		}
+	for (int iter_num = 0; iter_num < num_iters; iter_num++) {
+		compression_times.clear();
+		decompression_times.clear();
+		compressed_sizes.clear();
 
-		float milli;
-		cudaMallocHost((void **)&h_layer_input[i], layer_sizes[i] * sizeof(float));
-		pthread_t threads[NUM_COMPRESSION_THREADS];
+		// compression
+		for (int i = 0; i < num_layers; i++) {
+			if (!layer_compress[i]) {
+				compression_times.push_back(0);
+				continue;
+			}
 
-		// generate data
-		for (long j = 0; j < layer_sizes[i]; j++) {
-			if (rand() % 100 < layer_density[i])
-				h_layer_input[i][j] = 1;
-			else
-				h_layer_input[i][j] = 0;
-		}
+			float milli;
+			cudaMallocHost((void **)&h_layer_input[i], layer_sizes[i] * sizeof(float));
+			pthread_t threads[NUM_COMPRESSION_THREADS];
 
-		cout << "starting " << i << endl;
-		cudaEventRecord(start);
-
-		cudaMallocHost(&compressed_data[i].mask, ceil(1.0 * layer_sizes[i] / COMPRESSION_BATCH_SIZE) * sizeof(unsigned int));
-		for (int j = 0; j < NUM_COMPRESSION_THREADS; j++) {
-			compression_thread_args[i][j].original_data = h_layer_input[i];
-		}
-
-		for (int j = 0; j < NUM_COMPRESSION_THREADS; j++) {
-			pthread_create(&threads[j], NULL, &compressThread, (void *)&compression_thread_args[i][j]);
-		}
-		for (int j = 0; j < NUM_COMPRESSION_THREADS; j++) {
-			pthread_join(threads[j], NULL);
-		}
-
-		cudaFreeHost(h_layer_input[i]);
-		cudaEventRecord(stop);
-		cudaEventSynchronize(stop);
-		cudaEventElapsedTime(&milli, start, stop);
-		compression_times.push_back(milli);
-	}
-
-	size_t total_size = 0;
-	size_t total_size_uncompressed = 0;
-	for (int i = 0; i < num_layers; i++) {
-		total_size_uncompressed += layer_sizes[i];
-		if (!layer_compress[i]) {
-			total_size += layer_sizes[i];
-			continue;
-		}
-		for (int j = 0; j < NUM_COMPRESSION_THREADS; j++) {
-			for (int k = 0; k < COMPRESSION_DISCRETIZATION_FACTOR; k++) {
-				if (compressed_data[i].slot_taken[j][k]) {
-					total_size += compression_metadata[i].slot_size[j][k];
+			// generate data
+			for (long j = 0; j < layer_sizes[i]; j++) {
+				if (rand() % 100 < layer_density[i])
+					h_layer_input[i][j] = 1;
+				else {
+					h_layer_input[i][j] = 0;
 				}
 			}
+
+			// cout << "starting " << i << endl;
+	#ifdef ALLOC_AND_COMPRESS
+			cudaEventRecord(start);
+	#endif
+
+			cudaMallocHost(&(compressed_data[i].mask), ceil(1.0 * layer_sizes[i] / COMPRESSION_BATCH_SIZE) * sizeof(unsigned int));
+
+	#ifndef ALLOC_AND_COMPRESS
+			for (int j = 0; j < NUM_COMPRESSION_THREADS; j++) {
+				for (int k = 0; k < COMPRESSION_DISCRETIZATION_FACTOR; k++) {
+					cudaMallocHost(&(compressed_data[i].data[j][k]), compression_metadata[i].slot_size[j][k] * sizeof(float));
+				}
+			}
+			cudaEventRecord(start);
+	#endif
+
+			for (int j = 0; j < NUM_COMPRESSION_THREADS; j++) {
+				compression_thread_args[i][j].original_data = h_layer_input[i];
+			}
+
+			for (int j = 0; j < NUM_COMPRESSION_THREADS; j++) {
+				pthread_create(&threads[j], NULL, &compressThread, (void *)&compression_thread_args[i][j]);
+			}
+			for (int j = 0; j < NUM_COMPRESSION_THREADS; j++) {
+				pthread_join(threads[j], NULL);
+			}
+
+	#ifdef ALLOC_AND_COMPRESS
+			cudaFreeHost(h_layer_input[i]);
+	#endif
+			cudaEventRecord(stop);
+			cudaEventSynchronize(stop);
+			cudaEventElapsedTime(&milli, start, stop);
+			compression_times.push_back(milli);
+	#ifndef ALLOC_AND_COMPRESS
+			cudaFreeHost(h_layer_input[i]);
+	#endif
 		}
-	}
-	std::cout << "total_size_compressed(MB): " << total_size * sizeof(float) / (1.0 * 1024 * 1024) << std::endl;
-	std::cout << "total_size_uncompressed(MB): " << total_size_uncompressed * sizeof(float) / (1.0 * 1024 * 1024) << std::endl;
 
-
-	// decompression
-	for (int i = 0; i < num_layers; i++) {
-		float milli;
-		if (!layer_compress[i]) {
-			decompression_times.push_back(0);
-			continue;
+		// print uncompressed and compressed size for each layer
+		// size_t size_compressed_print = 0;
+		for (int i = 0; i < num_layers; i++) {
+			float size_compressed = 0;
+			for (int j = 0; j < NUM_COMPRESSION_THREADS; j++) {
+				for (int k = 0; k < COMPRESSION_DISCRETIZATION_FACTOR; k++) {
+					if (compressed_data[i].slot_taken[j][k]) {
+						size_compressed += compression_metadata[i].slot_size[j][k] * sizeof(float);
+					}
+				}
+			}
+			size_compressed += compression_metadata[i].total_compression_batches * sizeof(unsigned int);
+			// size_compressed_print += compression_metadata[i].total_compression_batches * sizeof(unsigned int);
+			compressed_sizes.push_back(size_compressed / (1024 * 1024));
 		}
+		// cout << size_compressed_print / (1.0 * 1024 * 1024) << endl;
+		// decompression
+		for (int i = 0; i < num_layers; i++) {
+			float milli;
+			if (!layer_compress[i]) {
+				decompression_times.push_back(0);
+				continue;
+			}
 
-		pthread_t threads[NUM_COMPRESSION_THREADS];
-		cudaEventRecord(start);
-		cudaMallocHost(&h_layer_input[i], layer_sizes[i] * sizeof(float));
+			pthread_t threads[NUM_COMPRESSION_THREADS];
+	#ifdef ALLOC_AND_COMPRESS		
+			cudaEventRecord(start);
+	#endif
 
-		cout << "starting " << i << endl;
+			cudaMallocHost(&(h_layer_input[i]), layer_sizes[i] * sizeof(float));
+
+	#ifndef ALLOC_AND_COMPRESS
+			cudaEventRecord(start);
+	#endif
+
+			// cout << "starting " << i << endl;
 
 
 
-		for (int j = 0; j < NUM_COMPRESSION_THREADS; j++) {
-			compression_thread_args[i][j].original_data = h_layer_input[i];
-		}
+			for (int j = 0; j < NUM_COMPRESSION_THREADS; j++) {
+				compression_thread_args[i][j].original_data = h_layer_input[i];
+			}
 
-		for (int j = 0; j < NUM_COMPRESSION_THREADS; j++) {
-			pthread_create(&threads[j], NULL, &decompressThread, (void *)&compression_thread_args[i][j]);
-		}
-		for (int j = 0; j < NUM_COMPRESSION_THREADS; j++) {
-			pthread_join(threads[j], NULL);
-		}
+			for (int j = 0; j < NUM_COMPRESSION_THREADS; j++) {
+				pthread_create(&threads[j], NULL, &decompressThread, (void *)&compression_thread_args[i][j]);
+			}
+			for (int j = 0; j < NUM_COMPRESSION_THREADS; j++) {
+				pthread_join(threads[j], NULL);
+			}
 
-		for (int j = 0; j < NUM_COMPRESSION_THREADS; j++) {
-			for (int k = 0; k < COMPRESSION_DISCRETIZATION_FACTOR; k++) {
-				if (compressed_data[i].slot_taken[j][k]) {
+	#ifdef ALLOC_AND_COMPRESS
+	#ifndef FREE_DECOMPRESS_PARALLEL
+			for (int j = 0; j < NUM_COMPRESSION_THREADS; j++) {
+				for (int k = 0; k < COMPRESSION_DISCRETIZATION_FACTOR; k++) {
+					if (compressed_data[i].slot_taken[j][k]) {
+						cudaFreeHost(compressed_data[i].data[j][k]);
+					}
+				}
+			}
+	#endif
+			cudaFreeHost(compressed_data[i].mask);
+	#endif
+
+			cudaEventRecord(stop);
+			cudaEventSynchronize(stop);
+			cudaEventElapsedTime(&milli, start, stop);
+			decompression_times.push_back(milli);
+	#ifndef ALLOC_AND_COMPRESS
+			for (int j = 0; j < NUM_COMPRESSION_THREADS; j++) {
+				for (int k = 0; k < COMPRESSION_DISCRETIZATION_FACTOR; k++) {
 					cudaFreeHost(compressed_data[i].data[j][k]);
 				}
 			}
+			cudaFreeHost(compressed_data[i].mask);
+	#endif
+			cudaFreeHost(h_layer_input[i]);
 		}
 
-		cudaEventRecord(stop);
-		cudaEventSynchronize(stop);
-		cudaEventElapsedTime(&milli, start, stop);
-		decompression_times.push_back(milli);
+		all_compression_times.push_back(compression_times);
+		all_decompression_times.push_back(decompression_times);
+		all_compressed_sizes.push_back(compressed_sizes);
 	}
-
-	float total_compression_time = 0, total_decompression_time = 0;
-	for (int i = 0; i < num_layers; i++) {
-		cout << i << " " << compression_times[i] << endl;
-		total_compression_time += compression_times[i];
+	for (int i = 0; i < all_compression_times.size(); i++) {
+		cout << "compression time: ";
+		for (int j = 0; j < all_compression_times[i].size(); j++) {
+			cout << all_compression_times[i][j] << " ";
+		}
+		cout << endl << "decompression_times: ";
+		for (int j = 0; j < all_decompression_times[i].size(); j++) {
+			cout << all_decompression_times[i][j] << " ";
+		}
+		cout << endl << "compressed_size: ";
+		for (int j = 0; j < all_compressed_sizes[i].size(); j++) {
+			cout << all_compressed_sizes[i][j] << " ";
+		}
+		cout << endl << endl;
 	}
-	cout << endl;
-	for (int i = 0; i < num_layers; i++) {
-		cout << i << " " << decompression_times[i] << endl;
-		total_decompression_time += decompression_times[i];
-	}
-	cout << "total compression time(ms): " << total_compression_time << endl;
-	cout << "total decompression time(ms): " << total_decompression_time << endl;
 
 }
 
@@ -337,7 +412,7 @@ void *compressThread(void *arg) {
 			if (compressed_data_pos.offset == -1 or compressed_data_pos.offset == compression_metadata.slot_size[thread_num][compressed_data_pos.slot]) {
 				compressed_data_pos.slot += 1;
 #ifdef ALLOC_AND_COMPRESS
-				cudaMallocHost((void **)&compressed_data.data[thread_num][compressed_data_pos.slot], compression_metadata.slot_size[thread_num][compressed_data_pos.slot] * sizeof(float));
+				cudaMallocHost((void **)&(compressed_data.data[thread_num][compressed_data_pos.slot]), compression_metadata.slot_size[thread_num][compressed_data_pos.slot] * sizeof(float));
 #endif
 				compressed_data.slot_taken[thread_num][compressed_data_pos.slot] = true;
 				compressed_data_pos.offset = 0;
@@ -378,13 +453,19 @@ void *decompressThread(void *arg) {
 			compressed_data.mask[mask_pos.slot + compression_metadata.num_elements[thread_num] / COMPRESSION_BATCH_SIZE] = compressed_data.mask[mask_pos.slot + compression_metadata.num_elements[thread_num] / COMPRESSION_BATCH_SIZE] << (COMPRESSION_BATCH_SIZE - compression_metadata.num_elements[thread_num] % COMPRESSION_BATCH_SIZE);
 		}
 	}
-
+	bool nonzero_exists = false;
 	for (long i = compression_metadata.start_pos[thread_num]; i < compression_metadata.start_pos[thread_num] + compression_metadata.num_elements[thread_num]; i++) {
 
 		if (compressed_data.mask[mask_pos.slot] & 0x80000000 > 0) {
+			nonzero_exists = true;
 			original_data[i] = ((float ***)compressed_data.data)[thread_num][compressed_data_pos.slot][compressed_data_pos.offset];
 			compressed_data_pos.offset += 1;
 			if (compressed_data_pos.offset == compression_metadata.slot_size[thread_num][compressed_data_pos.slot]) {
+#ifdef ALLOC_AND_COMPRESS
+#ifdef FREE_DECOMPRESS_PARALLEL
+				cudaFreeHost(compressed_data.data[thread_num][compressed_data_pos.slot]);
+#endif
+#endif
 				compressed_data_pos.slot += 1;
 				compressed_data_pos.offset = 0;
 			}
@@ -399,5 +480,12 @@ void *decompressThread(void *arg) {
 			mask_pos.offset = 0;
 		}
 
+	}
+	if (nonzero_exists && compressed_data_pos.offset != compression_metadata.slot_size[thread_num][compressed_data_pos.slot]) {
+#ifdef ALLOC_AND_COMPRESS
+#ifdef FREE_DECOMPRESS_PARALLEL
+		cudaFreeHost(compressed_data.data[thread_num][compressed_data_pos.slot]);
+#endif
+#endif
 	}
 }
